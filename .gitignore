@@ -1,0 +1,10 @@
+.venv
+.env
+.netlify
+.history
+.playwright-mcp
+*.docx
+*.pdf
+*.log
+*.csv
+__pycache__

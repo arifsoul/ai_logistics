@@ -1,0 +1,10 @@
+[build]
+  base = "frontend"
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NEXT_PUBLIC_API_URL = "https://your-api-domain.example.com"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"

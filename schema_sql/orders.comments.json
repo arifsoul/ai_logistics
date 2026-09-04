@@ -1,0 +1,20 @@
+{
+  "__table__": "Table `orders` is the single source of truth for logistics analytics: one row per customer order, 400 rows total, no other table exists and there are no joins. Columns: order_id, client_id, order_date, delivery_date, carrier, origin_city, destination_city, status, sku, product_category, quantity, unit_price_usd, order_value_usd, is_promo, promo_discount_pct, region, warehouse.",
+  "carrier": ". Shipping company. 9 distinct values: 'BluePost', 'CargoLux', 'DHL', 'FedEx', 'GLS', 'NordExpress', 'PostNL', 'UPS', 'USPS'.",
+  "client_id": ". Customer id, e.g. 'CUST-1007'. 30 distinct clients.",
+  "delivery_date": "nullable. When the order was delivered. NULL when it has not been delivered (in_transit, canceled, some exception rows). Delivery duration in days = delivery_date - order_date.",
+  "destination_city": ". Ship-to city formatted 'City, ST', e.g. 'Boston, MA'.",
+  "is_promo": ". True when the order used a promotion.",
+  "order_date": "never null. When the order was placed. Range 2025-01-01..2025-12-30. Use date_trunc('month', order_date) for monthly trends and to_char(order_date, 'IYYY-\"W\"IW') for ISO weeks.",
+  "order_id": "primary key. Unique id of one order, e.g. 'ORD-100001'. Count it for order volume.",
+  "order_value_usd": ". Total order value in USD after discount. Sum it for revenue.",
+  "origin_city": ". Ship-from city formatted 'City, ST', e.g. 'Chicago, IL'.",
+  "product_category": ". Product family, one of 'BOOK', 'BRUSH', 'CRAYON', 'MARKER', 'PAINT', 'PAPER', 'PENCIL', 'STICKER'.",
+  "promo_discount_pct": ". Discount percent applied, 0 when is_promo is false.",
+  "quantity": ". Units ordered in this order.",
+  "region": ". Sales region, one of 'EU', 'UK', 'US-C', 'US-E', 'US-W'.",
+  "sku": ". Product code formatted '<CATEGORY>-<4 digits>', e.g. 'PAPER-0197'. 355 distinct SKUs.",
+  "status": ". Order state, exactly one of 'delivered', 'delayed', 'in_transit', 'exception', 'canceled'. 'delayed' means late; 'exception' means a delivery problem. On-time rate = delivered / (delivered + delayed).",
+  "unit_price_usd": ". Price per unit in USD.",
+  "warehouse": ". Fulfilment centre code, 9 distinct: 'AMS-FC1', 'ATL-DC1', 'BER-FC1', 'CHI-DC1', 'DFW-DC1', 'EWR-DC1', 'LAX-DC1', 'LON-FC1', 'SFO-DC2'."
+}
