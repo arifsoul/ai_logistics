@@ -44,11 +44,14 @@ from backend.ai_config import AI_BASE_URL, AI_MODEL, openai_client
 from backend.analytics import LogisticsAnalytics
 from backend import ddl_docs, history, sql_agent
 
-# Create Tables
-Base.metadata.create_all(bind=engine)
-
 app = FastAPI()
 analytics = LogisticsAnalytics()
+
+# Create tables lazily — don't crash import if DATABASE_URL not set (HF Space without vars)
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception as _e:
+    print(f"DB create_all skipped at import: {_e}")
 
 
 def parse_optional_date(value: str | None):
@@ -100,12 +103,16 @@ async def analytics_ask(
 
 @app.on_event("startup")
 async def startup_event():
-    with engine.begin() as connection:
-        connection.execute(
-            text(
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS visible_password VARCHAR"
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS visible_password VARCHAR"
+                )
             )
-        )
+    except Exception as _e:
+        print(f"DB startup migration skipped: {_e}")
+        return
 
     # Seed Superadmin
     super_username = os.getenv("SUPER_USERNAME")
@@ -596,6 +603,23 @@ async def delete_user(
 async def root():
     """The UI is the Next.js app in frontend/; this process is API-only."""
     return {"status": "ok", "service": "logistics-api", "docs": "/docs"}
+
+
+@app.get("/health")
+async def health():
+    """Liveness probe — does not require DB."""
+    return {"status": "ok"}
+
+
+@app.get("/health/db")
+async def health_db():
+    """DB connectivity probe."""
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return {"status": "ok", "db": "up"}
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"db down: {e}")
 
 
 if __name__ == "__main__":
