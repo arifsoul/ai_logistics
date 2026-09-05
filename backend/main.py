@@ -49,6 +49,8 @@ analytics = LogisticsAnalytics()
 
 # Create tables lazily — don't crash import if DATABASE_URL not set (HF Space without vars)
 try:
+    with engine.begin() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
     Base.metadata.create_all(bind=engine)
 except Exception as _e:
     print(f"DB create_all skipped at import: {_e}")
@@ -104,6 +106,9 @@ async def analytics_ask(
 @app.on_event("startup")
 async def startup_event():
     try:
+        with engine.begin() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        Base.metadata.create_all(bind=engine)
         with engine.begin() as connection:
             connection.execute(
                 text(
@@ -112,7 +117,6 @@ async def startup_event():
             )
     except Exception as _e:
         print(f"DB startup migration skipped: {_e}")
-        return
 
     # Seed Superadmin
     super_username = os.getenv("SUPER_USERNAME")
