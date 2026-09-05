@@ -19,6 +19,14 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql+psycopg://postgres:devpass@127.0.0.1:55432/logistics",
 )
+# Normalize driver prefix: HF/Supabase dashboard copies `postgresql://` which
+# defaults to psycopg2 dialect. App uses psycopg v3 (`psycopg[binary]`).
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
+elif DATABASE_URL.startswith("postgresql://") and not DATABASE_URL.startswith("postgresql+psycopg://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
+elif DATABASE_URL.startswith("postgresql+psycopg2://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql+psycopg2://", "postgresql+psycopg://", 1)
 
 # Statement timeout applied to LLM-generated SQL, in milliseconds.
 SQL_TIMEOUT_MS = int(os.getenv("SQL_TIMEOUT_MS", "5000"))
