@@ -7,4 +7,5 @@
 *.pdf
 *.log
 *.csv
+!mock_logistics_data.csv
 __pycache__
