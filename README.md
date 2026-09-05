@@ -1,3 +1,13 @@
+---
+title: Logistics Analytics API
+emoji: 📦
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+pinned: false
+app_port: 7860
+---
+
 # Logistics Analytics — text-to-SQL over Postgres
 
 Ask the logistics database in plain language. Every question is translated into
@@ -140,18 +150,37 @@ python -W ignore::ResourceWarning -m unittest discover -s tests
 
 ## Deploy
 
-**Backend** — any host that runs the ASGI app; point `DATABASE_URL` at Supabase:
+**Backend — Hugging Face Spaces (Docker)** — repo ini siap deploy sebagai Space Docker:
+
+1. Buat Space baru di https://huggingface.co/new-space → SDK `Docker` → `Blank`.
+2. Push repo ini ke Space (`git push` ke `https://huggingface.co/spaces/<user>/<space>`). HF build `Dockerfile` otomatis, expose `7860`.
+3. Di Space **Settings → Variables and secrets**, set:
+   ```
+   DATABASE_URL=postgresql+psycopg://... (Supabase pooler)
+   API_KEY=<google_ai_studio_key>
+   AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
+   AI_MODEL=gemini-flash-latest
+   EMBEDDING_MODEL=gemini-embedding-001
+   EMBEDDING_DIM=3072
+   SECRET_KEY=<random_long>
+   CORS_ORIGINS=https://<your-netlify>.netlify.app,https://<user>-<space>.hf.space
+   SUPER_USERNAME=admin
+   SUPER_PASSWORD=admin
+   ```
+4. Seed sekali ke Supabase: `DATABASE_URL=<supabase> python -m backend.seed`
+5. Space URL jadi `NEXT_PUBLIC_API_URL` untuk frontend. Health check: `GET /` dan `/docs`.
+
+`Dockerfile` jalankan `uvicorn backend.main:app --host 0.0.0.0 --port $PORT` (`$PORT=7860` di HF). Frontmatter `sdk: docker` + `app_port: 7860` sudah di `README.md`.
+
+**Backend — alternatif (Render / host lain)** — host ASGI apapun:
 
 ```
 uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ```
 
-Run `python -m backend.seed` once against the Supabase database. Add the
-frontend's public origin to `CORS_ORIGINS`.
+Run `python -m backend.seed` sekali ke Supabase. Tambah origin frontend ke `CORS_ORIGINS`.
 
-**Frontend** — Netlify picks up `frontend/netlify.toml` (base `frontend`,
-`@netlify/plugin-nextjs`). Set `NEXT_PUBLIC_API_URL` in the Netlify environment
-to the deployed API origin.
+**Frontend** — Netlify pick up `frontend/netlify.toml` (base `frontend`, `@netlify/plugin-nextjs`). Set `NEXT_PUBLIC_API_URL` di Netlify ke origin API (HF Space URL atau Render URL).
 
 ## Assumptions and limitations
 

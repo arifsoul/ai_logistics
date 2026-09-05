@@ -3,8 +3,16 @@
 This repo is best deployed as:
 
 - Netlify: frontend
-- Render: backend
+- **Hugging Face Spaces (Docker)** or Render: backend
 - Supabase or Render Postgres: database
+
+> **Hugging Face Spaces — backend Docker (recommended alternative to Render):**
+> 1. Buat Space: https://huggingface.co/new-space → SDK `Docker` → Blank.
+> 2. Push repo ini ke Space remote (`git remote add space https://huggingface.co/spaces/<user>/<space>` lalu `git push space main`). HF build `Dockerfile` otomatis (port `7860`).
+> 3. Di Space **Settings → Variables and secrets** set: `DATABASE_URL` (Supabase pooler `postgresql+psycopg://...`), `API_KEY`, `AI_BASE_URL`, `AI_MODEL`, `EMBEDDING_MODEL`, `EMBEDDING_DIM`, `SECRET_KEY`, `CORS_ORIGINS` (isi URL Netlify + `https://<user>-<space>.hf.space`), `SUPER_USERNAME`, `SUPER_PASSWORD`.
+> 4. Seed sekali: `DATABASE_URL=<supabase> python -m backend.seed` (dari lokal).
+> 5. Set `NEXT_PUBLIC_API_URL=https://<user>-<space>.hf.space` di Netlify. Cek `GET /` dan `/docs` di Space URL.
+> Frontmatter `sdk: docker` + `app_port: 7860` sudah di `README.md`; `Dockerfile` jalankan `uvicorn backend.main:app --host 0.0.0.0 --port $PORT`.
 
 ## 1) Deploy database
 
