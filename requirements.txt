@@ -9,3 +9,4 @@ pgvector
 python-jose[cryptography]
 passlib
 argon2-cffi
+bcrypt
