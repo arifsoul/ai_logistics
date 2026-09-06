@@ -8,6 +8,7 @@ import { api, getRole, me, type Role } from "@/lib/api";
 type UserRow = { id: number; username: string; role: Role; password?: string | null };
 
 const ROLES: Role[] = ["user", "admin", "superadmin"];
+const MANAGEABLE_ROLES: Role[] = ["user", "admin"];
 
 export default function AdminPage() {
   const router = useRouter();
@@ -20,14 +21,12 @@ export default function AdminPage() {
   const [revealed, setRevealed] = useState<Record<number, string>>({});
   // Read from localStorage only after mount, otherwise the server render (no
   // role) and the first client render disagree and hydration fails.
-  const [isSuper, setIsSuper] = useState(false);
   const [myId, setMyId] = useState(0);
 
   const load = () =>
     api<{ users: UserRow[] }>("/api/users")
       .then((data) => {
         setUsers(data.users);
-        setIsSuper(getRole() === "superadmin");
       })
       .catch((caught) =>
         setError(caught instanceof Error ? caught.message : "Could not load"),
@@ -175,7 +174,7 @@ export default function AdminPage() {
             onChange={(event) => setRole(event.target.value as Role)}
             className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
           >
-            {ROLES.filter((item) => isSuper || item !== "superadmin").map(
+            {MANAGEABLE_ROLES.map(
               (item) => (
                 <option key={item} value={item}>
                   {item}
@@ -220,15 +219,13 @@ export default function AdminPage() {
                   <select
                     id={`role-${row.id}`}
                     value={row.role}
+                    disabled={row.username.toLowerCase() === "super@admin.com"}
                     onChange={(event) =>
                       changeRole(row.id, event.target.value as Role)
                     }
                     className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1"
                   >
-                    {ROLES.filter(
-                      (item) =>
-                        isSuper || (item !== "superadmin" && row.role !== "superadmin"),
-                    ).map((item) => (
+                    {MANAGEABLE_ROLES.map((item) => (
                       <option key={item} value={item}>
                         {item}
                       </option>
@@ -247,7 +244,8 @@ export default function AdminPage() {
                     </button>
                     {/* The superadmin is the way back into this page, and an
                         account cannot delete itself. The API refuses both. */}
-                    {row.role !== "superadmin" && row.id !== myId && (
+                    {row.username.toLowerCase() !== "super@admin.com" &&
+                      row.id !== myId && (
                       <button
                         type="button"
                         id={`delete-${row.id}`}

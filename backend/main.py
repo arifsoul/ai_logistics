@@ -45,6 +45,13 @@ from backend.ai_config import AI_BASE_URL, AI_MODEL, openai_client
 from backend.analytics import LogisticsAnalytics
 from backend import ddl_docs, history, sql_agent
 from backend.cors import get_allowed_origins
+from backend.roles import (
+    ALLOWED_ROLES,
+    CANONICAL_SUPERADMIN_USERNAME,
+    can_delete_user,
+    is_canonical_superadmin,
+    validate_role_change,
+)
 
 app = FastAPI()
 analytics = LogisticsAnalytics()
@@ -120,42 +127,44 @@ async def startup_event():
     except Exception as _e:
         print(f"DB startup migration skipped: {_e}")
 
-    # Seed Superadmin
-    super_username = os.getenv("SUPER_USERNAME")
+    # Keep exactly one protected superadmin identity. Older deployments may
+    # Older deployments may still have a different superadmin username, so
+    # normalize those rows here.
+    super_username = CANONICAL_SUPERADMIN_USERNAME
     super_password = os.getenv("SUPER_PASSWORD")
 
-    if super_username and super_password:
-        # Get a new db session
-        db = SessionLocal()
-        try:
-            # Check if superadmin exists
-            existing_superadmin = (
-                db.query(User).filter(User.username == super_username).first()
-            )
-
+    db = SessionLocal()
+    try:
+        existing_superadmin = (
+            db.query(User).filter(User.username == super_username).first()
+        )
+        if super_password:
             hashed_pwd = get_password_hash(super_password)
-
             if not existing_superadmin:
                 print(f"Seeding Superadmin: {super_username}")
-                new_user = User(
+                existing_superadmin = User(
                     username=super_username,
                     hashed_password=hashed_pwd,
                     visible_password=super_password,
                     role="superadmin",
                 )
-                db.add(new_user)
+                db.add(existing_superadmin)
             else:
-                # Force update password to ensure .env is source of truth
-                print(f"Updating Superadmin password and role for: {super_username}")
                 existing_superadmin.hashed_password = hashed_pwd
                 existing_superadmin.visible_password = super_password
-                existing_superadmin.role = "superadmin"
 
-            db.commit()
-        except Exception as e:
-            print(f"Error seeding superadmin: {e}")
-        finally:
-            db.close()
+        if existing_superadmin:
+            existing_superadmin.role = "superadmin"
+
+        db.query(User).filter(
+            User.role == "superadmin", User.username != super_username
+        ).update({User.role: "admin"}, synchronize_session=False)
+        db.commit()
+    except Exception as e:
+        print(f"Error normalizing superadmin: {e}")
+        db.rollback()
+    finally:
+        db.close()
 
     # Refresh the text-to-SQL context. This re-reads the live column list and
     # the distinct values of every text column, so a new carrier or status that
@@ -172,7 +181,6 @@ async def startup_event():
         print(f"Schema context refresh skipped: {e}")
     finally:
         db.close()
-
 
 # CORS. An explicit origin list, not "*": `allow_credentials=True` with a
 # wildcard is rejected by browsers, and the Next.js client is cross-origin.
@@ -414,9 +422,8 @@ async def register_user(
     if existing_user:
         raise HTTPException(status_code=400, detail="Username already registered")
 
-    # Block registration of SUPER_USERNAME
-    super_username = os.getenv("SUPER_USERNAME")
-    if super_username and username == super_username:
+    # The canonical superadmin identity is reserved for startup provisioning.
+    if username.casefold() == CANONICAL_SUPERADMIN_USERNAME:
         raise HTTPException(
             status_code=400, detail="This username is reserved. Please log in directly."
         )
@@ -470,13 +477,12 @@ async def create_user(
     Admin/Superadmin create user.
     """
     # Check permissions
-    if role == "superadmin" and current_user.role != "superadmin":
-        raise HTTPException(
-            status_code=403, detail="Only Superadmin can create Superadmin"
-        )
-
-    if role not in ["user", "admin", "superadmin"]:
+    if role not in ALLOWED_ROLES:
         raise HTTPException(status_code=400, detail="Invalid role")
+    if role == "superadmin" and (
+        current_user.role != "superadmin" or username.casefold() != CANONICAL_SUPERADMIN_USERNAME
+    ):
+        raise HTTPException(status_code=403, detail="Only super@admin.com may be Superadmin")
 
     existing_user = db.query(User).filter(User.username == username).first()
     if existing_user:
@@ -519,18 +525,10 @@ async def update_user_role(
 
     new_role = role_update.role
 
-    # Validation
-    if new_role not in ["user", "admin", "superadmin"]:
-        raise HTTPException(status_code=400, detail="Invalid role")
-
-    if current_user.role != "superadmin":
-        # Regular Admin restrictions
-        if target_user.role == "superadmin":
-            raise HTTPException(status_code=403, detail="Cannot modify Superadmin")
-        if new_role == "superadmin":
-            raise HTTPException(status_code=403, detail="Cannot promote to Superadmin")
-
-    target_user.role = new_role
+    try:
+        target_user.role = validate_role_change(current_user, target_user, new_role)
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
     db.commit()
     return {
         "status": "success",
@@ -555,7 +553,7 @@ async def reset_user_password(
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    if target_user.role == "superadmin" and current_user.role != "superadmin":
+    if is_canonical_superadmin(target_user):
         raise HTTPException(status_code=403, detail="Cannot modify Superadmin")
 
     new_password = secrets.token_urlsafe(9)
@@ -576,19 +574,15 @@ async def delete_user(
 ):
     """Delete a user and their chat history.
 
-    The superadmin account (SUPER_USERNAME) is never deletable: it is the only
+    The canonical superadmin account is never deletable: it is the only
     guaranteed way back into the admin UI. Self-deletion is refused too.
     """
     target_user = db.query(User).filter(User.id == user_id).first()
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    if target_user.role == "superadmin":
-        raise HTTPException(status_code=403, detail="Cannot delete Superadmin")
-    if target_user.username == os.getenv("SUPER_USERNAME"):
-        raise HTTPException(status_code=403, detail="Cannot delete Superadmin")
-    if target_user.id == current_user.id:
-        raise HTTPException(status_code=400, detail="Cannot delete your own account")
+    if not can_delete_user(current_user, target_user):
+        raise HTTPException(status_code=403, detail="Cannot delete this account")
 
     username = target_user.username
     # chat_sessions.user_id is a plain FK: drop the sessions through the ORM so

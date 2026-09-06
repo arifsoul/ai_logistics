@@ -302,7 +302,7 @@ Backend (`.env`, read by `backend/ai_config.py` and `backend/database.py`):
 | `SQL_TIMEOUT_MS` | Hard ceiling on any generated query. Default `5000`. |
 | `CORS_ORIGINS` | Comma-separated browser origins allowed to call the API. |
 | `SECRET_KEY` | JWT signing secret. Set a long random value in production. |
-| `SUPER_USERNAME`, `SUPER_PASSWORD` | Optional initial superadmin, applied on startup. |
+| `SUPER_PASSWORD` | Password for the protected `super@admin.com` account, applied on startup. |
 
 Frontend (`frontend/.env.local`):
 
@@ -350,9 +350,10 @@ python -W ignore::ResourceWarning -m unittest discover -s tests
    EMBEDDING_DIM=3072
    SECRET_KEY=<random_long>
    CORS_ORIGINS=https://<your-netlify>.netlify.app,https://<user>-<space>.hf.space
-   SUPER_USERNAME=admin
-   SUPER_PASSWORD=admin
+  SUPER_PASSWORD=<superadmin_password>
    ```
+  The only protected superadmin username is `super@admin.com`; every other
+  account may only use the `admin` or `user` role.
 4. Seed Supabase once: `DATABASE_URL=<supabase> python -m backend.seed`.
 5. Use the Space URL as `NEXT_PUBLIC_API_URL` for the frontend. Health checks are `GET /` and `/docs`.
 
