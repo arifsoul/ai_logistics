@@ -12,6 +12,7 @@ Idempotent: `orders` is truncated and reloaded, `schema_docs` is replaced.
 
 import argparse
 import csv
+import getpass
 import sys
 from datetime import date, datetime
 from pathlib import Path
@@ -19,7 +20,12 @@ from pathlib import Path
 from sqlalchemy import text
 
 from backend.database import Base, SessionLocal, engine
-from backend.models_db import Order
+from backend.auth import get_password_hash
+from backend.models_db import Order, User
+from backend.roles import (
+    CANONICAL_SUPERADMIN_USERNAME,
+    validate_superadmin_password,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 CSV_PATH = ROOT / "mock_logistics_data.csv"
@@ -87,12 +93,43 @@ def load_schema_docs() -> int:
         db.close()
 
 
+def seed_superadmin(password: str) -> bool:
+    """Create or update the canonical superadmin in PostgreSQL using a hash."""
+    password = validate_superadmin_password(password)
+    db = SessionLocal()
+    try:
+        user = (
+            db.query(User)
+            .filter(User.username == CANONICAL_SUPERADMIN_USERNAME)
+            .first()
+        )
+        if user is None:
+            user = User(username=CANONICAL_SUPERADMIN_USERNAME)
+            db.add(user)
+
+        user.hashed_password = get_password_hash(password)
+        user.visible_password = None
+        user.role = "superadmin"
+        db.query(User).filter(
+            User.role == "superadmin",
+            User.username != CANONICAL_SUPERADMIN_USERNAME,
+        ).update({User.role: "admin"}, synchronize_session=False)
+        db.commit()
+        return True
+    finally:
+        db.close()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--no-vectors", action="store_true", help="skip embedding schema metadata"
     )
     parser.add_argument("--csv", type=Path, default=CSV_PATH)
+    parser.add_argument(
+        "--superadmin-password",
+        help="seed the canonical superadmin password into PostgreSQL",
+    )
     args = parser.parse_args()
 
     if not args.csv.exists():
@@ -100,6 +137,16 @@ def main() -> int:
         return 1
 
     init_db()
+    if args.superadmin_password:
+        seed_superadmin(args.superadmin_password)
+        print(f"superadmin: {CANONICAL_SUPERADMIN_USERNAME} seeded")
+    elif sys.stdin.isatty():
+        password = getpass.getpass(
+            f"Password for {CANONICAL_SUPERADMIN_USERNAME} (leave blank to skip): "
+        )
+        if password:
+            seed_superadmin(password)
+            print(f"superadmin: {CANONICAL_SUPERADMIN_USERNAME} seeded")
     rows = read_csv(args.csv)
     count = load_orders(rows)
     print(f"orders: {count} rows loaded from {args.csv.name}")

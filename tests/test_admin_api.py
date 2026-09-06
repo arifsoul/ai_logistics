@@ -7,6 +7,7 @@ from backend.roles import (
     CANONICAL_SUPERADMIN_USERNAME,
     can_delete_user,
     validate_superadmin_username,
+    validate_superadmin_password,
     validate_role_change,
 )
 
@@ -50,6 +51,11 @@ class AdminApiTests(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             validate_superadmin_username("another@example.com")
+
+    def test_superadmin_password_is_validated_for_database_seeding(self):
+        self.assertEqual("secret", validate_superadmin_password("secret"))
+        with self.assertRaises(ValueError):
+            validate_superadmin_password("123")
 
 
 if __name__ == "__main__":

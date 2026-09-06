@@ -211,6 +211,16 @@ replaced. Add `--no-vectors` to load the orders without spending embedding
 calls. The API then listens on <http://127.0.0.1:8000> (`/docs` for the OpenAPI
 page).
 
+Seed or reset the protected superadmin password directly in PostgreSQL:
+
+```powershell
+python -m backend.seed --superadmin-password "choose-a-strong-password"
+```
+
+This creates or updates `super@admin.com`, stores an Argon2 hash in
+`users.hashed_password`, and assigns the `superadmin` role. The application does
+not read the superadmin password from environment variables.
+
 > Use `127.0.0.1` rather than `localhost` in `DATABASE_URL` on Windows; the IPv6
 > lookup for `localhost` can add ~26 s to every connection.
 
@@ -302,7 +312,6 @@ Backend (`.env`, read by `backend/ai_config.py` and `backend/database.py`):
 | `SQL_TIMEOUT_MS` | Hard ceiling on any generated query. Default `5000`. |
 | `CORS_ORIGINS` | Comma-separated browser origins allowed to call the API. |
 | `SECRET_KEY` | JWT signing secret. Set a long random value in production. |
-| `SUPER_PASSWORD` | Password for the protected `super@admin.com` account, applied on startup. |
 
 Frontend (`frontend/.env.local`):
 
@@ -350,11 +359,11 @@ python -W ignore::ResourceWarning -m unittest discover -s tests
    EMBEDDING_DIM=3072
    SECRET_KEY=<random_long>
    CORS_ORIGINS=https://<your-netlify>.netlify.app,https://<user>-<space>.hf.space
-  SUPER_PASSWORD=<superadmin_password>
    ```
   The only protected superadmin username is `super@admin.com`; every other
   account may only use the `admin` or `user` role.
-4. Seed Supabase once: `DATABASE_URL=<supabase> python -m backend.seed`.
+4. Seed Supabase once, including the superadmin password:
+  `DATABASE_URL=<supabase> python -m backend.seed --superadmin-password "<strong-password>"`.
 5. Use the Space URL as `NEXT_PUBLIC_API_URL` for the frontend. Health checks are `GET /` and `/docs`.
 
 The `Dockerfile` runs `uvicorn backend.main:app --host 0.0.0.0 --port $PORT` (`$PORT=7860` on Hugging Face). The `sdk: docker` and `app_port: 7860` frontmatter is already present in `README.md`.

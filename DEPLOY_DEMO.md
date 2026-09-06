@@ -9,8 +9,8 @@ This repo is best deployed as:
 > **Hugging Face Spaces — backend Docker (recommended alternative to Render):**
 > 1. Buat Space: https://huggingface.co/new-space → SDK `Docker` → Blank.
 > 2. Push repo ini ke Space remote (`git remote add space https://huggingface.co/spaces/<user>/<space>` lalu `git push space main`). HF build `Dockerfile` otomatis (port `7860`).
-> 3. Di Space **Settings → Variables and secrets** set: `DATABASE_URL` (Supabase pooler `postgresql+psycopg://...`), `API_KEY`, `AI_BASE_URL`, `AI_MODEL`, `EMBEDDING_MODEL`, `EMBEDDING_DIM`, `SECRET_KEY`, `CORS_ORIGINS` (isi URL Netlify + `https://<user>-<space>.hf.space`), `SUPER_USERNAME`, `SUPER_PASSWORD`.
-> 4. Seed sekali: `DATABASE_URL=<supabase> python -m backend.seed` (dari lokal).
+> 3. In the Space **Settings → Variables and secrets**, set `DATABASE_URL` (Supabase pooler `postgresql+psycopg://...`), `API_KEY`, `AI_BASE_URL`, `AI_MODEL`, `EMBEDDING_MODEL`, `EMBEDDING_DIM`, `SECRET_KEY`, and `CORS_ORIGINS` (the Netlify URL plus `https://<user>-<space>.hf.space`).
+> 4. Seed once from a trusted machine: `DATABASE_URL=<supabase> python -m backend.seed --superadmin-password "<strong-password>"`.
 > 5. Set `NEXT_PUBLIC_API_URL=https://<user>-<space>.hf.space` di Netlify. Cek `GET /` dan `/docs` di Space URL.
 > Frontmatter `sdk: docker` + `app_port: 7860` sudah di `README.md`; `Dockerfile` jalankan `uvicorn backend.main:app --host 0.0.0.0 --port $PORT`.
 
@@ -53,8 +53,6 @@ SQL_TIMEOUT_MS=5000
 MAX_UNIQUE_VALUES=50
 CORS_ORIGINS=https://your-netlify-site.netlify.app
 SECRET_KEY=replace_with_long_random_secret
-SUPER_USERNAME=admin
-SUPER_PASSWORD=admin
 ```
 
 4. Deploy the service.
@@ -94,11 +92,12 @@ CORS_ORIGINS=https://your-app.netlify.app
 
 ## 6) Login credentials
 
-Default demo admin credentials:
+Canonical superadmin credentials:
 
 ```text
-username: admin
-password: admin
+username: super@admin.com
+password: the password supplied to `backend.seed`
 ```
 
-This is from `SUPER_USERNAME` and `SUPER_PASSWORD`.
+The password is stored as an Argon2 hash in PostgreSQL, not in environment
+variables.

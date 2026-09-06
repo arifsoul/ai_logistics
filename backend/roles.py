@@ -12,6 +12,12 @@ def validate_superadmin_username(username: str) -> str:
     return CANONICAL_SUPERADMIN_USERNAME
 
 
+def validate_superadmin_password(password: str) -> str:
+    if len(password) < 4:
+        raise ValueError("Superadmin password must be at least 4 characters")
+    return password
+
+
 def validate_role_change(current_user, target_user, new_role: str) -> str:
     if new_role not in ALLOWED_ROLES:
         raise ValueError("Invalid role")

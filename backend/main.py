@@ -128,32 +128,15 @@ async def startup_event():
     except Exception as _e:
         print(f"DB startup migration skipped: {_e}")
 
-    # Keep exactly one protected superadmin identity. Older deployments may
-    # Older deployments may still have a different superadmin username, so
-    # normalize those rows here.
+    # Keep exactly one protected superadmin identity. Password provisioning is
+    # intentionally handled by `backend.seed`, never by application env vars.
     super_username = CANONICAL_SUPERADMIN_USERNAME
-    super_password = os.getenv("SUPER_PASSWORD")
 
     db = SessionLocal()
     try:
         existing_superadmin = (
             db.query(User).filter(User.username == super_username).first()
         )
-        if super_password:
-            hashed_pwd = get_password_hash(super_password)
-            if not existing_superadmin:
-                print(f"Seeding Superadmin: {super_username}")
-                existing_superadmin = User(
-                    username=super_username,
-                    hashed_password=hashed_pwd,
-                    visible_password=super_password,
-                    role="superadmin",
-                )
-                db.add(existing_superadmin)
-            else:
-                existing_superadmin.hashed_password = hashed_pwd
-                existing_superadmin.visible_password = super_password
-
         if existing_superadmin:
             existing_superadmin.role = "superadmin"
 
