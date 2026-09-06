@@ -26,7 +26,7 @@ Postgres, and nothing else feeds the answers.
 
 ```mermaid
 flowchart LR
-    Browser["Next.js frontend<br/>Netlify"] -->|HTTPS + Bearer JWT| API["FastAPI backend<br/>Hugging Face / Render"]
+    Browser["Next.js frontend<br/>Netlify"] -->|HTTPS + Bearer JWT| API["FastAPI backend<br/>Hugging Face Spaces (Docker)"]
     API --> Auth["JWT authentication<br/>Argon2 password hashing"]
     API --> Chat["/api/chat<br/>NDJSON streaming"]
     API --> Analytics["/api/analytics<br/>KPI, query, forecast"]
@@ -150,7 +150,7 @@ sequenceDiagram
 | Frontend framework | Next.js 16.3.4, React 19.2.8, TypeScript 5 | App Router, client fetching (`frontend/lib/api.ts`, `frontend/lib/frames.ts`) |
 | Styling | Tailwind CSS 4 (`@import "tailwindcss"` in `app/globals.css`) | Layout, no `tailwind.config.*` |
 | Visualization | Chart.js 4.5.0 (`components/ChartCanvas.tsx`) | Line/bar, destroy on cleanup |
-| Deployment | Docker (`Dockerfile` → `uvicorn backend.main:app --port $PORT`), Hugging Face Spaces (Docker, `app_port: 7860`), Netlify (`frontend/netlify.toml` + `@netlify/plugin-nextjs`), Render | Hosting |
+| Deployment | Docker (`Dockerfile` → `uvicorn backend.main:app --port $PORT`), Hugging Face Spaces (Docker, `app_port: 7860`), Netlify (`frontend/netlify.toml` + `@netlify/plugin-nextjs`) | Hosting |
 | Testing | Python `unittest` (`tests/`, 25 tests, AI stub) | No API key needed |
 
 ## Layout
@@ -158,7 +158,7 @@ sequenceDiagram
 ```
 app.py                    dev entry point (uvicorn backend.main:app)
 mock_logistics_data.csv   source of truth, 400 orders
-render.yaml / Dockerfile  deploy config (Hugging Face Spaces Docker, Render)
+Dockerfile  deploy config (Hugging Face Spaces Docker)
 backend/
   main.py                 FastAPI routes: /api/chat (NDJSON), /api/analytics/*, /api/auth/*, /api/users/*, /api/history
   database.py             SQLAlchemy engine/session from DATABASE_URL, SQL_TIMEOUT_MS
@@ -417,15 +417,7 @@ python -W ignore::ResourceWarning -m unittest discover -s tests
 
 The `Dockerfile` runs `uvicorn backend.main:app --host 0.0.0.0 --port $PORT` (`$PORT=7860` on Hugging Face). The `sdk: docker` and `app_port: 7860` frontmatter is already present in `README.md`.
 
-**Backend — alternative (Render / another host)** — any ASGI host:
-
-```
-uvicorn backend.main:app --host 0.0.0.0 --port 8000
-```
-
-Run `python -m backend.seed` once against Supabase. Add the frontend origin to `CORS_ORIGINS`.
-
-**Frontend** — Netlify picks up `frontend/netlify.toml` (base `frontend`, `@netlify/plugin-nextjs`). Set `NEXT_PUBLIC_API_URL` in Netlify to the API origin (the HF Space URL or Render URL).
+**Frontend** — Netlify picks up `frontend/netlify.toml` (base `frontend`, `@netlify/plugin-nextjs`). Set `NEXT_PUBLIC_API_URL` in Netlify to the HF Space URL.
 
 ## Assumptions and limitations
 

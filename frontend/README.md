@@ -14,7 +14,7 @@ Backend harus jalan di `NEXT_PUBLIC_API_URL` (default `http://127.0.0.1:8000`) d
 
 ```mermaid
 flowchart LR
-    Browser["Next.js 16 / React 19<br/>Netlify"] -->|Bearer JWT| API["FastAPI<br/>Hugging Face / Render"]
+    Browser["Next.js 16 / React 19<br/>Netlify"] -->|Bearer JWT| API["FastAPI<br/>Hugging Face Spaces (Docker)"]
     Browser --> NavBar["components/NavBar.tsx<br/>auth gate + GET /api/users/me"]
     Browser --> Chat["app/(app)/chat/page.tsx<br/>NDJSON streaming"]
     Browser --> Dash["app/(app)/dashboard/page.tsx<br/>KPI + charts"]
@@ -118,4 +118,4 @@ npx tsc --noEmit
 ## Deploy (Netlify)
 
 `netlify.toml` set base `frontend`, `npm run build`, `@netlify/plugin-nextjs`.
-Set `NEXT_PUBLIC_API_URL` di Netlify env ke origin API (HF Space / Render), tambah URL Netlify ke `CORS_ORIGINS` backend.
+Set `NEXT_PUBLIC_API_URL` di Netlify env ke origin API (HF Space URL), tambah URL Netlify ke `CORS_ORIGINS` backend.

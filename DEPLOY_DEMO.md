@@ -3,10 +3,10 @@
 This repo is best deployed as:
 
 - Netlify: frontend
-- **Hugging Face Spaces (Docker)** or Render: backend
-- Supabase or Render Postgres: database
+- **Hugging Face Spaces (Docker)**: backend
+- Supabase: database
 
-> **Hugging Face Spaces — backend Docker (recommended alternative to Render):**
+> **Hugging Face Spaces — backend Docker:**
 > 1. Buat Space: https://huggingface.co/new-space → SDK `Docker` → Blank.
 > 2. Push repo ini ke Space remote (`git remote add space https://huggingface.co/spaces/<user>/<space>` lalu `git push space main`). HF build `Dockerfile` otomatis (port `7860`).
 > 3. In the Space **Settings → Variables and secrets**, set `DATABASE_URL` (Supabase pooler `postgresql+psycopg://...`), `API_KEY`, `AI_BASE_URL`, `AI_MODEL`, `EMBEDDING_MODEL`, `EMBEDDING_DIM`, `SECRET_KEY`, and `CORS_ORIGINS` (the Netlify URL plus `https://<user>-<space>.hf.space`).
@@ -27,36 +27,27 @@ create extension if not exists vector;
 3. Copy the Postgres connection string.
 4. Put it into the backend environment as `DATABASE_URL`.
 
-### Option B: Render Postgres
-1. Add a PostgreSQL database in Render.
-2. Render will provide a `DATABASE_URL` connection string.
-3. In the database SQL console, run:
+## 2) Deploy backend on Hugging Face Spaces (Docker)
 
-```sql
-create extension if not exists vector;
-```
-
-## 2) Deploy backend on Render
-
-1. Connect this repository to Render.
-2. Use `render.yaml` at the repo root.
-3. Fill these env vars in the Render dashboard:
+1. Create Space at https://huggingface.co/new-space → SDK `Docker` → Blank.
+2. Push repo to Space (`git remote add space https://huggingface.co/spaces/<user>/<space>` then `git push space main`). HF builds `Dockerfile` (port `7860`).
+3. In Space **Settings → Variables and secrets**, set:
 
 ```env
+DATABASE_URL=postgresql+psycopg://... (Supabase pooler)
 API_KEY=your_google_ai_key
 AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
 AI_MODEL=gemini-flash-latest
 EMBEDDING_MODEL=gemini-embedding-001
 EMBEDDING_DIM=3072
-DATABASE_URL=postgresql+psycopg://...your_db...
 SQL_TIMEOUT_MS=5000
 MAX_UNIQUE_VALUES=50
-CORS_ORIGINS=https://your-netlify-site.netlify.app
+CORS_ORIGINS=https://your-netlify-site.netlify.app,https://<user>-<space>.hf.space
 SECRET_KEY=replace_with_long_random_secret
 ```
 
-4. Deploy the service.
-5. Verify the app is up on `/docs`.
+4. Space builds automatically.
+5. Verify `GET /` and `/docs` on `https://<user>-<space>.hf.space`.
 
 ## 3) Seed the database
 
@@ -77,7 +68,7 @@ This creates the `orders` table and vector metadata.
 5. Set env var:
 
 ```env
-NEXT_PUBLIC_API_URL=https://your-render-backend-url.onrender.com
+NEXT_PUBLIC_API_URL=https://<user>-<space>.hf.space
 ```
 
 6. Deploy.

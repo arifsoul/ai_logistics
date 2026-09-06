@@ -32,8 +32,6 @@ MAX_UNIQUE_VALUES=50
 CORS_ORIGINS=https://your-netlify-site.netlify.app
 
 SECRET_KEY=replace_with_long_random_secret
-SUPER_USERNAME=admin
-SUPER_PASSWORD=admin
 ```
 
 Important:
@@ -79,11 +77,8 @@ NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
 The repository includes an API-only backend, so deploy it to any host that can run FastAPI + Postgres.
 
 Examples:
-- Render
-- Railway
-- Fly.io
-- Azure App Service
-- VPS with uvicorn + systemd
+- Hugging Face Spaces (Docker) — recommended
+- Railway / Fly.io / Azure App Service / VPS with uvicorn + systemd (any ASGI host)
 
 For a typical uvicorn deployment:
 
