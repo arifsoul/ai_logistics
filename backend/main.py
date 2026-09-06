@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException, Depends, Form, status
+from fastapi import FastAPI, HTTPException, Depends, Form, Request, status
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -582,10 +583,46 @@ async def delete_user(
     db.commit()
     return {"status": "success", "deleted": username}
 
+FRONTEND_URL_DEFAULT = "https://logistics-ai.netlify.app/"
+
+def _frontend_url() -> str:
+    return os.getenv("FRONTEND_URL", FRONTEND_URL_DEFAULT).rstrip("/") + "/"
+
+_LANDING_HTML_TEMPLATE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Logistics Analytics API</title>
+<style>
+  *{box-sizing:border-box} body{margin:0;min-height:100vh;display:grid;place-items:center;background:#020617;color:#e2e8f0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  .card{width:min(560px,92vw);background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:32px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,.4)}
+  h1{margin:0 0 8px;font-size:22px} p{margin:0;color:#94a3b8;line-height:1.5}
+  .btn{display:inline-block;margin:20px 0 14px;padding:12px 22px;border-radius:10px;background:#06b6d4;color:#020617;font-weight:700;text-decoration:none}
+  .btn:hover{background:#22d3ee} .links{font-size:13px} .links a{color:#7dd3fc;text-decoration:none} .links a:hover{text-decoration:underline}
+  code{background:#1e293b;padding:2px 6px;border-radius:6px;font-size:12px;color:#cbd5e1}
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>📦 Logistics Analytics API</h1>
+    <p>Backend running on Hugging Face. UI ada di Netlify — klik tombol di bawah untuk buka aplikasi.</p>
+    <a class="btn" href="{frontend_url}" target="_blank" rel="noopener noreferrer">Buka Aplikasi → logistics-ai.netlify.app</a>
+    <p class="links"><a href="/docs">API Docs</a> · <a href="/health">Health</a> · <a href="/health/db">DB Health</a> · <code>GET /</code> JSON jika Accept: application/json</p>
+  </div>
+</body>
+</html>"""
+
+def _landing_html() -> str:
+    return _LANDING_HTML_TEMPLATE.format(frontend_url=_frontend_url())
+
 @app.get("/")
-async def root():
-    """The UI is the Next.js app in frontend/; this process is API-only."""
-    return {"status": "ok", "service": "logistics-api", "docs": "/docs"}
+async def root(request: Request):
+    """Landing HTML for browsers (Hugging Face), JSON for API clients."""
+    accept = request.headers.get("accept", "")
+    if "text/html" in accept:
+        return HTMLResponse(content=_landing_html())
+    return {"status": "ok", "service": "logistics-api", "docs": "/docs", "frontend": _frontend_url()}
 
 
 @app.get("/health")
