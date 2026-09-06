@@ -6,6 +6,7 @@ from backend.models import UserResponse
 from backend.roles import (
     CANONICAL_SUPERADMIN_USERNAME,
     can_delete_user,
+    validate_superadmin_username,
     validate_role_change,
 )
 
@@ -41,6 +42,14 @@ class AdminApiTests(unittest.TestCase):
         )
 
         self.assertFalse(can_delete_user(superadmin, superadmin))
+
+    def test_only_canonical_username_can_be_provisioned_as_superadmin(self):
+        self.assertEqual(
+            CANONICAL_SUPERADMIN_USERNAME,
+            validate_superadmin_username(CANONICAL_SUPERADMIN_USERNAME),
+        )
+        with self.assertRaises(ValueError):
+            validate_superadmin_username("another@example.com")
 
 
 if __name__ == "__main__":

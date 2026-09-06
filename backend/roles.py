@@ -6,6 +6,12 @@ def is_canonical_superadmin(user) -> bool:
     return user.username.casefold() == CANONICAL_SUPERADMIN_USERNAME
 
 
+def validate_superadmin_username(username: str) -> str:
+    if username.casefold() != CANONICAL_SUPERADMIN_USERNAME:
+        raise ValueError("Only super@admin.com may be Superadmin")
+    return CANONICAL_SUPERADMIN_USERNAME
+
+
 def validate_role_change(current_user, target_user, new_role: str) -> str:
     if new_role not in ALLOWED_ROLES:
         raise ValueError("Invalid role")

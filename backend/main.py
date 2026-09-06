@@ -50,6 +50,7 @@ from backend.roles import (
     CANONICAL_SUPERADMIN_USERNAME,
     can_delete_user,
     is_canonical_superadmin,
+    validate_superadmin_username,
     validate_role_change,
 )
 
@@ -360,6 +361,11 @@ async def register_superadmin(
     existing_superadmin = db.query(User).filter(User.role == "superadmin").first()
     if existing_superadmin:
         raise HTTPException(status_code=400, detail="Superadmin already exists")
+
+    try:
+        username = validate_superadmin_username(username)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
     hashed_pwd = get_password_hash(password)
     new_user = User(
