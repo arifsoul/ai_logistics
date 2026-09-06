@@ -92,19 +92,19 @@ netlify.toml               Netlify config
 
 ## Screenshots
 
-![Login](../docs/screenshots/login.png)
+![Login](https://i.imgur.com/7potfjp.png)
 *Login — autentikasi sebelum akses chat/analytics/admin.*
 
-![Chat workspace](../docs/screenshots/room_chat.png)
+![Chat workspace](https://i.imgur.com/7qavwlH.png)
 *Chat workspace — sample questions, model select, new chat, input.*
 
-![Chat answer](../docs/screenshots/answer_chat.png)
+![Chat answer](https://i.imgur.com/TMOXIo8.png)
 *Narrative + chart + table + Show SQL.*
 
-![Dashboard](../docs/screenshots/analytics_dashboard.png)
+![Dashboard](https://i.imgur.com/B9sLwQ4.png)
 *Dashboard — total/delivered/delayed/on-time rate/avg delivery + volume & performance charts.*
 
-> Dari root repo path `docs/screenshots/*.png`; dari `frontend/` path `../docs/screenshots/*.png`.
+> Hosted on Imgur; no local `docs/screenshots/*.png` needed.
 
 ## Scripts
 

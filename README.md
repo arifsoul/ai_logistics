@@ -191,7 +191,7 @@ frontend/                 Next.js 16 App Router
   netlify.toml            base frontend, @netlify/plugin-nextjs
 tests/                    25 unittest tests (AI stub, no network)
 schema_sql/               orders.sql + orders.comments.json (DDL source)
-docs/screenshots/         login.png, room_chat.png, answer_chat.png, analytics_dashboard.png
+docs/screenshots/         hosted on Imgur (see Application Screenshots)
 ```
 
 ## Prerequisites
@@ -268,28 +268,28 @@ questions are asked. Register an account on first use.
 
 ### Login
 
-![Logistics AI login page](docs/screenshots/login.png)
+![Logistics AI login page](https://i.imgur.com/7potfjp.png)
 
 *Caption: Login page for authenticating users before they access chat, analytics,
 and administration features.*
 
 ### Chat Workspace
 
-![Logistics AI chat workspace](docs/screenshots/room_chat.png)
+![Logistics AI chat workspace](https://i.imgur.com/7qavwlH.png)
 
 *Caption: Chat workspace with sample questions, AI model selection, a new-chat
 control, and the input for questions about the logistics database.*
 
 ### Chat Answer
 
-![Chat answer with a chart and table](docs/screenshots/answer_chat.png)
+![Chat answer with a chart and table](https://i.imgur.com/TMOXIo8.png)
 
 *Caption: A text-to-SQL answer showing the narrative, carrier delay-rate chart,
 query result table, and the option to inspect generated SQL.*
 
 ### Dashboard Analytics
 
-![Logistics AI analytics dashboard](docs/screenshots/analytics_dashboard.png)
+![Logistics AI analytics dashboard](https://i.imgur.com/B9sLwQ4.png)
 
 *Caption: Operations dashboard with total orders, delivered, delayed, on-time
 rate, and average delivery KPIs, plus volume and delivery-performance charts.*
