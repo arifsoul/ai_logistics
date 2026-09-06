@@ -7,8 +7,8 @@ import { api, getRole, me, type Role } from "@/lib/api";
 
 type UserRow = { id: number; username: string; role: Role; password?: string | null };
 
-const ROLES: Role[] = ["user", "admin", "superadmin"];
 const MANAGEABLE_ROLES: Role[] = ["user", "admin"];
+const SUPERADMIN_USERNAME = "super@admin.com";
 
 export default function AdminPage() {
   const router = useRouter();
@@ -213,35 +213,44 @@ export default function AdminPage() {
                   )}
                 </td>
                 <td className="px-4 py-2">
-                  <label htmlFor={`role-${row.id}`} className="sr-only">
-                    Role for {row.username}
-                  </label>
-                  <select
-                    id={`role-${row.id}`}
-                    value={row.role}
-                    disabled={row.username.toLowerCase() === "super@admin.com"}
-                    onChange={(event) =>
-                      changeRole(row.id, event.target.value as Role)
-                    }
-                    className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1"
-                  >
-                    {MANAGEABLE_ROLES.map((item) => (
-                      <option key={item} value={item}>
-                        {item}
-                      </option>
-                    ))}
-                  </select>
+                  {row.username.toLowerCase() === SUPERADMIN_USERNAME ? (
+                    <span className="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs font-bold tracking-wide text-amber-300">
+                      superadmin
+                    </span>
+                  ) : (
+                    <>
+                      <label htmlFor={`role-${row.id}`} className="sr-only">
+                        Role for {row.username}
+                      </label>
+                      <select
+                        id={`role-${row.id}`}
+                        value={row.role}
+                        onChange={(event) =>
+                          changeRole(row.id, event.target.value as Role)
+                        }
+                        className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1"
+                      >
+                        {MANAGEABLE_ROLES.map((item) => (
+                          <option key={item} value={item}>
+                            {item}
+                          </option>
+                        ))}
+                      </select>
+                    </>
+                  )}
                 </td>
                 <td className="px-4 py-2">
                   <div className="flex gap-2">
-                    <button
-                      type="button"
-                      id={`reset-${row.id}`}
-                      onClick={() => resetPassword(row)}
-                      className="rounded-lg border border-slate-700 px-2 py-1 text-xs font-semibold text-slate-300 hover:border-cyan-400 hover:text-cyan-300"
-                    >
-                      Reset password
-                    </button>
+                    {row.username.toLowerCase() !== SUPERADMIN_USERNAME && (
+                      <button
+                        type="button"
+                        id={`reset-${row.id}`}
+                        onClick={() => resetPassword(row)}
+                        className="rounded-lg border border-slate-700 px-2 py-1 text-xs font-semibold text-slate-300 hover:border-cyan-400 hover:text-cyan-300"
+                      >
+                        Reset password
+                      </button>
+                    )}
                     {/* The superadmin is the way back into this page, and an
                         account cannot delete itself. The API refuses both. */}
                     {row.username.toLowerCase() !== "super@admin.com" &&

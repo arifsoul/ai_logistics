@@ -41,35 +41,33 @@ flowchart LR
 
 ### Responsibility Split
 
-**Backend** lives in `backend/` and owns data access, authorization, SQL
-validation, analytics, forecasting, and history persistence.
+**Backend** (`backend/`) — data access, auth, SQL safety, analytics, history.
 
-- `main.py` provides FastAPI routes, CORS, startup migrations, chat streaming,
-  history, analytics, authentication, and admin endpoints.
-- `database.py` creates the SQLAlchemy engine and session from `DATABASE_URL`.
-- `models_db.py` defines the `User`, `ChatSession`, `ChatMessage`, `Order`, and
-  `SchemaDoc` models.
-- `seed.py` loads the CSV into `orders` and creates embeddings for schema
-  metadata.
-- `ddl_docs.py`, `schema_docs.py`, and `vectorstore.py` build and retrieve
-  schema context with pgvector.
-- `sql_agent.py` generates SQL, applies read-only guardrails, executes queries,
-  and emits `sql`, `table`, `chart`, `token`, and `done` frames.
-- `analytics.py` runs controlled KPI/analytics queries and stock forecasts.
-- `auth.py` manages password hashing, JWTs, and role checks.
-- `history.py` stores chat turns and their result payloads.
+- `main.py` — FastAPI routes: `POST /api/chat` (NDJSON stream), `GET/POST /api/analytics/*`, `POST /api/auth/token|register`, `GET /api/users/me`, `GET/POST /api/users`, `PUT /api/users/{id}/role`, `POST /api/users/{id}/reset-password`, `DELETE /api/users/{id}`, `GET/POST /api/history`, CORS, startup `CREATE EXTENSION vector` + `Base.metadata.create_all`.
+- `database.py` — SQLAlchemy engine/session from `DATABASE_URL`, `SQL_TIMEOUT_MS` statement timeout.
+- `models_db.py` — `User` (role: user/admin/superadmin), `ChatSession`, `ChatMessage` (payload: table/chart/sql/forecast), `Order` (400 rows), `SchemaDoc` (vector 3072).
+- `models.py` — Pydantic schemas for requests/responses.
+- `seed.py` — `mock_logistics_data.csv` → `orders` (truncate+reload), 24 schema docs → pgvector embeddings, `--superadmin-password` for `super@admin.com`, `--no-vectors` to skip embeddings.
+- `ddl_docs.py` / `schema_docs.py` / `vectorstore.py` — DDL reference, 24 metadata docs, `get_doc`/`schema_context` cosine search.
+- `sql_agent.py` — prompt with DDL+context → one SELECT/WITH → `FORBIDDEN` regex + `READ ONLY` transaction + `LIMIT 200` + `SQL_TIMEOUT_MS` → execute → table/chart spec → narration prompt (numbers only from result) → `sql`/`table`/`chart`/`token`/`meta`/`done` frames.
+- `analytics.py` — `LogisticsAnalytics.kpis()` / `query()` / `forecast()` — pure parameterized SQL, 3-month moving average + 15% buffer for forecast.
+- `auth.py` + `roles.py` — Argon2/bcrypt hashing, `python-jose` JWT (`SECRET_KEY`, `ACCESS_TOKEN_EXPIRE_MINUTES`), `get_current_user`/`get_current_admin`/`get_current_superadmin`, `CANONICAL_SUPERADMIN_USERNAME="super@admin.com"`, `validate_role_change`/`can_delete_user`.
+- `history.py` — persist `ChatSession`/`ChatMessage` per user, enforce ownership.
+- `ai_config.py` — `API_KEY`/`AI_BASE_URL`/`AI_MODEL`/`EMBEDDING_MODEL`/`EMBEDDING_DIM` (default `gemini-flash-latest` / `gemini-embedding-001` dim 3072), `openai_client()` for any OpenAI-compatible endpoint.
+- `cors.py` — `get_allowed_origins()` from `CORS_ORIGINS`.
 
-**Frontend** lives in `frontend/` and owns the user experience and result
-rendering.
+**Frontend** (`frontend/`) — Next.js 16 App Router, client-side fetching, no SSR data.
 
-- `app/login` handles login and registration.
-- `app/(app)/chat` handles questions, model selection, sessions, NDJSON
-  streaming, tables, charts, and SQL details.
-- `app/(app)/dashboard` displays fixed operational KPIs and charts.
-- `app/(app)/admin` provides user management for administrators.
-- `components/` contains the navbar, Chart.js canvas, and data table.
-- `lib/api.ts` manages the bearer token in `localStorage`.
-- `lib/frames.ts` parses the NDJSON stream from the chat endpoint.
+- `app/page.tsx` — redirect `/` → `/chat`.
+- `app/login/page.tsx` — login/register toggle, `POST /api/auth/token` (form-encoded) / `POST /api/auth/register`, `setSession(token, role)` in `localStorage`.
+- `app/(app)/layout.tsx` + `components/NavBar.tsx` — auth gate, `GET /api/users/me` validation, clear + redirect to `/login` on 401, role-based nav (Admin visible only for admin/superadmin).
+- `app/(app)/chat/page.tsx` — sample questions, model selector (`GET /api/models`), `session_id` in `localStorage` (`crypto.randomUUID()`), `POST /api/chat` NDJSON streaming via `readFrames`, renders narrative + `DataTable` + `ChartCanvas` + SQL drawer, `GET /api/history` replay on reload.
+- `app/(app)/dashboard/page.tsx` — `GET /api/analytics/kpis` + `POST /api/analytics/query` (orders/month, delivered/month, delayed/month, carrier, region), KPI cards + Chart.js.
+- `app/(app)/admin/page.tsx` — `GET /api/users`, `POST /api/users` (form-encoded), `PUT /api/users/{id}/role`, `POST /api/users/{id}/reset-password`, `DELETE /api/users/{id}`; superadmin badge (no select), hide self-delete, hide reset for superadmin.
+- `components/ChartCanvas.tsx` — Chart.js 4.5.0 wrapper, destroy on cleanup.
+- `components/DataTable.tsx` — table for query rows.
+- `lib/api.ts` — `API_URL` from `NEXT_PUBLIC_API_URL`, `TOKEN_KEY`/`ROLE_KEY` in `localStorage`, `apiFetch` (Bearer), `api<T>` (JSON + `ApiError`), `login`/`register`/`me`/`getRole`.
+- `lib/frames.ts` — NDJSON `sql`/`table`/`chart`/`token`/`meta`/`done`/`error` frames, `readFrames` async generator.
 
 ## Workflow
 
@@ -141,35 +139,59 @@ sequenceDiagram
 
 | Area | Technology | Role |
 | --- | --- | --- |
-| Backend API | Python 3.11+, FastAPI, Uvicorn | REST API and streaming responses |
-| Database access | SQLAlchemy, psycopg 3 | Engine, sessions, ORM, and SQL |
-| Database | PostgreSQL 15+ / Supabase | Orders, users, sessions, history, and metadata |
-| Vector search | pgvector | Cosine search for schema metadata |
-| AI integration | OpenAI-compatible API, Gemini default | SQL, embeddings, and narration |
-| Authentication | python-jose, Argon2, bcrypt compatibility | JWT and password hashing |
-| Frontend | Next.js 16, React 19, TypeScript 5 | UI and client-side fetching |
-| Styling | Tailwind CSS 4 | Layout and styling |
-| Visualization | Chart.js 4 | Line and bar charts |
-| Deployment | Docker, Hugging Face Spaces, Netlify, Render | Application hosting |
-| Testing | Python `unittest` | Backend tests with an AI stub |
+| Backend API | Python 3.11+, FastAPI, Uvicorn | REST API + NDJSON streaming (`backend/main.py`) |
+| Database access | SQLAlchemy 2.x, psycopg 3 (`psycopg[binary]`) | Engine, sessions, ORM |
+| Database | PostgreSQL 15+ / Supabase + `vector` extension | `orders`, `users`, `chat_sessions`, `chat_messages`, `schema_docs` |
+| Vector search | pgvector (`vectorstore.py`, `schema_docs.py`) | Cosine search schema metadata only (24 docs) |
+| AI integration | OpenAI-compatible API, Gemini default (`backend/ai_config.py`) | SQL generation, embeddings (`gemini-embedding-001` dim 3072), narration |
+| SQL safety | `backend/sql_agent.py` guardrails + `READ ONLY` transaction + `SQL_TIMEOUT_MS` | Single SELECT/WITH, LIMIT 200, forbidden keywords |
+| Authentication | python-jose, Argon2 (`argon2-cffi`), bcrypt, passlib | JWT (`SECRET_KEY`), hashed passwords, role checks (`backend/auth.py`, `backend/roles.py`) |
+| Analytics | `backend/analytics.py` pure SQL | KPI, query, forecast (3-month MA + 15% buffer) |
+| Frontend framework | Next.js 16.3.4, React 19.2.8, TypeScript 5 | App Router, client fetching (`frontend/lib/api.ts`, `frontend/lib/frames.ts`) |
+| Styling | Tailwind CSS 4 (`@import "tailwindcss"` in `app/globals.css`) | Layout, no `tailwind.config.*` |
+| Visualization | Chart.js 4.5.0 (`components/ChartCanvas.tsx`) | Line/bar, destroy on cleanup |
+| Deployment | Docker (`Dockerfile` → `uvicorn backend.main:app --port $PORT`), Hugging Face Spaces (Docker, `app_port: 7860`), Netlify (`frontend/netlify.toml` + `@netlify/plugin-nextjs`), Render | Hosting |
+| Testing | Python `unittest` (`tests/`, 25 tests, AI stub) | No API key needed |
 
 ## Layout
 
 ```
-app.py                    dev entry point for the API
+app.py                    dev entry point (uvicorn backend.main:app)
 mock_logistics_data.csv   source of truth, 400 orders
+render.yaml / Dockerfile  deploy config (Hugging Face Spaces Docker, Render)
 backend/
-  main.py                 FastAPI routes (chat, analytics, auth, history)
-  database.py             engine/session from DATABASE_URL
-  models_db.py            User, ChatSession, ChatMessage, Order, SchemaDoc
-  seed.py                 CSV -> orders, schema docs -> pgvector
-  schema_docs.py          the 24 metadata documents that get embedded
-  vectorstore.py          pgvector cosine search
-  sql_agent.py            question -> SQL -> narrative + table + chart frames
-  analytics.py            fixed KPI/chart queries (pure SQL)
-  history.py              chat turns persisted in Postgres
-frontend/                 Next.js frontend
-tests/                    25 unittest tests
+  main.py                 FastAPI routes: /api/chat (NDJSON), /api/analytics/*, /api/auth/*, /api/users/*, /api/history
+  database.py             SQLAlchemy engine/session from DATABASE_URL, SQL_TIMEOUT_MS
+  models_db.py            User, ChatSession, ChatMessage, Order, SchemaDoc (pgvector)
+  models.py               Pydantic request/response schemas
+  seed.py                 CSV -> orders (truncate+reload), schema_docs -> pgvector embeddings, superadmin seed
+  schema_docs.py          24 metadata documents (columns, values, examples) that get embedded
+  ddl_docs.py             DDL reference + cached_ddl for prompt
+  vectorstore.py          pgvector cosine search (get_doc, schema_context)
+  sql_agent.py            question -> SQL (guardrails) -> execute READ ONLY -> table+chart -> narration frames
+  analytics.py            LogisticsAnalytics: fixed KPI/chart SQL (pure parameterized SQL)
+  auth.py                 Argon2/bcrypt hashing, JWT create/verify, get_current_user/admin/superadmin
+  roles.py                CANONICAL_SUPERADMIN_USERNAME, validate_role_change, can_delete_user
+  history.py              chat turns persisted in chat_messages
+  ai_config.py            OpenAI-compatible client (API_KEY, AI_BASE_URL, AI_MODEL, EMBEDDING_MODEL/DIM)
+  cors.py                 get_allowed_origins from CORS_ORIGINS
+  rag.py / runtime.py     retrieval helpers / runtime config
+frontend/                 Next.js 16 App Router
+  app/page.tsx            root redirect -> /chat
+  app/login/page.tsx      login + register toggle
+  app/(app)/layout.tsx    auth gate (NavBar)
+  app/(app)/chat/page.tsx question input, model select, NDJSON streaming, table/chart/SQL
+  app/(app)/dashboard/page.tsx  KPI cards + charts (calls /api/analytics/*)
+  app/(app)/admin/page.tsx      user CRUD, role change, reset password (admin/superadmin only)
+  components/NavBar.tsx   nav + token validation via /api/users/me
+  components/ChartCanvas.tsx  Chart.js wrapper (destroy on cleanup)
+  components/DataTable.tsx    result table
+  lib/api.ts              API_URL, token/role in localStorage, apiFetch/api, login/register/me
+  lib/frames.ts           NDJSON frame types + readFrames async generator
+  netlify.toml            base frontend, @netlify/plugin-nextjs
+tests/                    25 unittest tests (AI stub, no network)
+schema_sql/               orders.sql + orders.comments.json (DDL source)
+docs/screenshots/         login.png, room_chat.png, answer_chat.png, analytics_dashboard.png
 ```
 
 ## Prerequisites
