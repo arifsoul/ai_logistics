@@ -172,7 +172,7 @@ def llm_comments(
     model: Optional[str] = None,
 ) -> Dict[str, str]:
     """`{"__table__": ..., "<column>": ...}` from the LLM. Raises on failure."""
-    from backend.ai_config import AI_MODEL, openai_client
+    from backend.ai_config import effective_ai_model, openai_client
 
     names = [column["column_name"] for column in cols]
     prompt = COMMENT_PROMPT.format(
@@ -181,7 +181,7 @@ def llm_comments(
         column_list=", ".join(names),
     )
     response = openai_client().chat.completions.create(
-        model=model or AI_MODEL,
+        model=model or effective_ai_model(),
         messages=[{"role": "user", "content": prompt}],
         temperature=0,
     )

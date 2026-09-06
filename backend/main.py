@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, Form, Request, status
+from fastapi import FastAPI, HTTPException, Depends, Form, Query, Request, status
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
@@ -27,7 +27,7 @@ from backend.models import (
     UserRoleUpdate,
 )
 from backend.database import engine, Base, get_db, SessionLocal
-from backend.models_db import User, ChatSession
+from backend.models_db import AppSettings, User, ChatSession
 from backend.auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     create_access_token,
@@ -42,7 +42,7 @@ import json
 import secrets
 import uuid
 from datetime import date
-from backend.ai_config import AI_BASE_URL, AI_MODEL, openai_client
+from backend.ai_config import AI_API_KEY, AI_BASE_URL, AI_MODEL, EMBEDDING_API_KEY, EMBEDDING_BASE_URL, EMBEDDING_DIM, EMBEDDING_DIMS, EMBEDDING_MODEL, effective_ai_api_key, effective_ai_base_url, effective_ai_model, effective_embedding_api_key, effective_embedding_base_url, effective_embedding_dim, effective_embedding_model, embedding_client, embedding_dim_for, openai_client
 from backend.analytics import LogisticsAnalytics
 from backend import ddl_docs, history, sql_agent
 from backend.cors import get_allowed_origins
@@ -126,6 +126,16 @@ async def startup_event():
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS visible_password VARCHAR"
                 )
             )
+            # app_settings for admin-editable AI/embedding config
+            connection.execute(text("CREATE TABLE IF NOT EXISTS app_settings (id INTEGER PRIMARY KEY, ai_base_url VARCHAR, embedding_base_url VARCHAR, ai_api_key VARCHAR, embedding_api_key VARCHAR, ai_model VARCHAR, embedding_model VARCHAR, embedding_dim INTEGER, updated_at TIMESTAMP)"))
+            connection.execute(text("ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS ai_api_key VARCHAR"))
+            connection.execute(text("ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS embedding_api_key VARCHAR"))
+            connection.execute(text("INSERT INTO app_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING"))
+            # Make embedding column dimension-agnostic so admin can swap models without migration
+            try:
+                connection.execute(text("ALTER TABLE schema_docs ALTER COLUMN embedding TYPE vector"))
+            except Exception:
+                pass
     except Exception as _e:
         print(f"DB startup migration skipped: {_e}")
 
@@ -216,7 +226,7 @@ async def chat_endpoint(
         answer_parts: list[str] = []
         payload: dict = {}
         try:
-            async for frame in sql_agent.answer(request.message, db, request.model):
+            async for frame in sql_agent.answer(request.message, db, request.model or effective_ai_model(), request.base_url):
                 if frame["type"] == "token":
                     answer_parts.append(frame["text"])
                 elif frame["type"] in ("sql", "chart", "table", "meta"):
@@ -241,25 +251,202 @@ async def chat_endpoint(
     return StreamingResponse(generate(), media_type="application/x-ndjson")
 
 
-@app.get("/api/models")
-async def get_models():
-    """Fetches available models from the configured OpenAI-compatible endpoint."""
-    try:
-        models = openai_client().models.list()
+def _is_embedding_model_id(mid: str) -> bool:
+    m = mid.lower()
+    return any(k in m for k in ("embed", "bge", "e5-", "nomic", "minilm", "gte", "uae", "instructor"))
 
-        # Gemini returns ids as "models/<name>"; strip it so ids match AI_MODEL.
+@app.get("/api/models")
+async def get_models(
+    base_url: str | None = Query(default=None),
+    kind: str = Query(default="chat"),
+    api_key: str | None = Query(default=None),
+):
+    """Fetches available models from the configured OpenAI-compatible endpoint.
+
+    `base_url` + `api_key` override the server defaults for this request only
+    (used by Admin tab to preview before saving). `kind=embedding` filters to
+    embedding models only and uses the embedding base/key.
+    """
+    target = base_url.strip() if base_url and base_url.strip() else None
+    if target and not (target.startswith("http://") or target.startswith("https://")):
+        raise HTTPException(status_code=400, detail="base_url must start with http:// or https://")
+    is_emb = kind == "embedding"
+    default_model = effective_embedding_model() if is_emb else effective_ai_model()
+    default_base = effective_embedding_base_url() if is_emb else effective_ai_base_url()
+    # api_key override: explicit query param > DB > env
+    override_key = api_key.strip() if api_key and api_key.strip() else None
+    try:
+        if is_emb:
+            key = override_key or effective_embedding_api_key()
+            base = target or default_base
+            client = embedding_client(base_url=base, api_key=key) if key else embedding_client(base_url=base)
+        else:
+            key = override_key or effective_ai_api_key()
+            base = target or default_base
+            client = openai_client(base_url=base, api_key=key) if key else openai_client(base_url=base)
+        models = client.models.list()
         model_list = [
-            {
-                "id": m.id.removeprefix("models/"),
-                "owned_by": getattr(m, "owned_by", "") or "",
-            }
+            {"id": m.id.removeprefix("models/"), "owned_by": getattr(m, "owned_by", "") or ""}
             for m in models.data
         ]
-        return {"models": model_list, "default": AI_MODEL}
+        if is_emb:
+            # Filter to embedding models only; if none match, return all (provider may not tag them)
+            filtered = [x for x in model_list if _is_embedding_model_id(x["id"])]
+            if filtered:
+                model_list = filtered
+        return {"models": model_list, "default": default_model, "base_url": target or default_base}
+    except HTTPException:
+        raise
     except Exception as e:
-        # Fallback so the UI still has the configured model selectable
         print(f"Error fetching models: {e}")
-        return {"models": [{"id": AI_MODEL, "owned_by": AI_BASE_URL}], "default": AI_MODEL}
+        fallback_base = target or default_base
+        return {"models": [{"id": default_model, "owned_by": fallback_base}], "default": default_model, "base_url": fallback_base}
+
+@app.get("/api/models/validate")
+async def validate_model(
+    model: str = Query(...),
+    kind: str = Query(default="chat"),
+    base_url: str | None = Query(default=None),
+    api_key: str | None = Query(default=None),
+):
+    """Check if a model id exists at the target endpoint. Returns {valid, models}."""
+    target = base_url.strip() if base_url and base_url.strip() else None
+    override_key = api_key.strip() if api_key and api_key.strip() else None
+    is_emb = kind == "embedding"
+    try:
+        if is_emb:
+            key = override_key or effective_embedding_api_key()
+            base = target or effective_embedding_base_url()
+            client = embedding_client(base_url=base, api_key=key) if key else embedding_client(base_url=base)
+        else:
+            key = override_key or effective_ai_api_key()
+            base = target or effective_ai_base_url()
+            client = openai_client(base_url=base, api_key=key) if key else openai_client(base_url=base)
+        models = client.models.list()
+        ids = {m.id.removeprefix("models/") for m in models.data}
+        # also accept with prefix
+        raw_ids = {m.id for m in models.data}
+        valid = model in ids or model in raw_ids
+        return {"valid": valid, "model": model, "kind": kind, "base_url": target or base}
+    except Exception as e:
+        return {"valid": False, "model": model, "kind": kind, "error": str(e)}
+
+@app.get("/api/ai-config")
+async def get_ai_config(current_user: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    row = db.query(AppSettings).filter(AppSettings.id == 1).first()
+    # has_key flags so UI knows if env/DB provides a key without leaking it
+    has_ai_key = bool((row.ai_api_key if row and getattr(row, "ai_api_key", None) else None) or AI_API_KEY or os.getenv("API_KEY"))
+    has_emb_key = bool((row.embedding_api_key if row and getattr(row, "embedding_api_key", None) else None) or EMBEDDING_API_KEY or AI_API_KEY or os.getenv("API_KEY"))
+    return {
+        "ai_base_url": (row.ai_base_url if row and row.ai_base_url else None) or AI_BASE_URL,
+        "embedding_base_url": (row.embedding_base_url if row and row.embedding_base_url else None) or EMBEDDING_BASE_URL,
+        "ai_model": (row.ai_model if row and row.ai_model else None) or AI_MODEL,
+        "embedding_model": (row.embedding_model if row and row.embedding_model else None) or EMBEDDING_MODEL,
+        "embedding_dim": (row.embedding_dim if row and row.embedding_dim else None) or EMBEDDING_DIM,
+        "has_ai_api_key": has_ai_key,
+        "has_embedding_api_key": has_emb_key,
+        "defaults": {"ai_base_url": AI_BASE_URL, "embedding_base_url": EMBEDDING_BASE_URL, "ai_model": AI_MODEL, "embedding_model": EMBEDDING_MODEL, "embedding_dim": EMBEDDING_DIM},
+        "embedding_dims": EMBEDDING_DIMS,
+    }
+
+@app.put("/api/ai-config")
+async def put_ai_config(payload: dict, current_user: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    row = db.query(AppSettings).filter(AppSettings.id == 1).first()
+    if not row:
+        row = AppSettings(id=1)
+        db.add(row)
+    for key in ("ai_base_url", "embedding_base_url", "ai_model", "embedding_model"):
+        if key in payload and payload[key] is not None:
+            v = str(payload[key]).strip()
+            if v and not (v.startswith("http://") or v.startswith("https://")) and "base_url" in key:
+                raise HTTPException(status_code=400, detail=f"{key} must start with http:// or https://")
+            setattr(row, key, v or None)
+    # api keys: empty string clears DB override (falls back to env)
+    for key in ("ai_api_key", "embedding_api_key"):
+        if key in payload and payload[key] is not None:
+            v = str(payload[key]).strip()
+            setattr(row, key, v or None)
+    if "embedding_dim" in payload and payload["embedding_dim"] is not None:
+        try:
+            row.embedding_dim = int(payload["embedding_dim"])
+        except Exception:
+            raise HTTPException(status_code=400, detail="embedding_dim must be integer")
+    # auto-adjust dim if model known and dim not explicitly set to a different value
+    if "embedding_model" in payload and payload["embedding_model"]:
+        auto = embedding_dim_for(str(payload["embedding_model"]).strip())
+        if auto and ("embedding_dim" not in payload or payload["embedding_dim"] is None):
+            row.embedding_dim = auto
+        elif auto and "embedding_dim" in payload:
+            # if user picked a known model, suggest its dim (still allow override)
+            pass
+    # validate models exist at target endpoints (non-blocking warning if unreachable)
+    for kind, model_key, base_key, key_key in [
+        ("chat", "ai_model", "ai_base_url", "ai_api_key"),
+        ("embedding", "embedding_model", "embedding_base_url", "embedding_api_key"),
+    ]:
+        if model_key in payload and payload[model_key]:
+            mid = str(payload[model_key]).strip()
+            base = str(payload.get(base_key, "") or getattr(row, base_key, "") or "").strip() or None
+            k = str(payload.get(key_key, "") or getattr(row, key_key, "") or "").strip() or None
+            try:
+                if kind == "embedding":
+                    c = embedding_client(base_url=base or effective_embedding_base_url(), api_key=k or effective_embedding_api_key())
+                else:
+                    c = openai_client(base_url=base or effective_ai_base_url(), api_key=k or effective_ai_api_key())
+                ids = {m.id.removeprefix("models/") for m in c.models.list().data}
+                raw = {m.id for m in c.models.list().data} if False else set()  # placeholder
+                if mid not in ids and mid not in raw:
+                    # try once more with raw ids
+                    c2 = c.models.list()
+                    all_ids = {m.id.removeprefix("models/") for m in c2.data} | {m.id for m in c2.data}
+                    if mid not in all_ids:
+                        raise HTTPException(status_code=400, detail=f"Model '{mid}' not found at {base or 'configured base URL'} for kind={kind}")
+            except HTTPException:
+                raise
+            except Exception:
+                # provider unreachable — allow save, validation will happen on use
+                pass
+    db.commit()
+    db.refresh(row)
+    return {"status": "ok", "ai_base_url": row.ai_base_url or AI_BASE_URL, "embedding_base_url": row.embedding_base_url or EMBEDDING_BASE_URL, "ai_model": row.ai_model or AI_MODEL, "embedding_model": row.embedding_model or EMBEDDING_MODEL, "embedding_dim": row.embedding_dim or EMBEDDING_DIM}
+
+@app.post("/api/ai-config/sync")
+async def sync_ai_config(payload: dict | None = None, current_user: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    """Save config (if payload) then re-embed schema_docs with current embedding model/base_url."""
+    payload = payload or {}
+    row = db.query(AppSettings).filter(AppSettings.id == 1).first()
+    if not row:
+        row = AppSettings(id=1)
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+    has_update = any(k in payload for k in ("ai_base_url", "embedding_base_url", "ai_model", "embedding_model", "embedding_dim", "ai_api_key", "embedding_api_key"))
+    if has_update:
+        for key in ("ai_base_url", "embedding_base_url", "ai_model", "embedding_model"):
+            if key in payload and payload[key] is not None:
+                v = str(payload[key]).strip()
+                if v and not (v.startswith("http://") or v.startswith("https://")) and "base_url" in key:
+                    raise HTTPException(status_code=400, detail=f"{key} must start with http:// or https://")
+                setattr(row, key, v or None)
+        for key in ("ai_api_key", "embedding_api_key"):
+            if key in payload and payload[key] is not None:
+                v = str(payload[key]).strip()
+                setattr(row, key, v or None)
+        if "embedding_dim" in payload and payload["embedding_dim"] is not None:
+            try:
+                row.embedding_dim = int(payload["embedding_dim"])
+            except Exception:
+                raise HTTPException(status_code=400, detail="embedding_dim must be integer")
+        elif "embedding_model" in payload and payload["embedding_model"]:
+            auto = embedding_dim_for(str(payload["embedding_model"]).strip())
+            if auto:
+                row.embedding_dim = auto
+        db.commit()
+        db.refresh(row)
+    emb_base = row.embedding_base_url or EMBEDDING_BASE_URL
+    emb_model = row.embedding_model or EMBEDDING_MODEL
+    result = ddl_docs.sync(db, force=True, use_llm=False)
+    return {"status": "ok", "documents": result.get("documents", 0), "embedding_model": emb_model, "embedding_base_url": emb_base, "embedding_dim": row.embedding_dim or EMBEDDING_DIM}
 
 
 @app.get("/api/history/{session_id}")
@@ -403,23 +590,23 @@ async def read_users_me(current_user: User = Depends(get_current_user)):
 async def register_user(
     username: str = Form(...),
     password: str = Form(...),
+    current_user: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
     """
-    Public registration for standard users.
+    Registration locked to admin/superadmin. Public self-register disabled.
+    Use /api/users for admin creation; this endpoint kept for admin UI compat.
     """
     existing_user = db.query(User).filter(User.username == username).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Username already registered")
 
-    # The canonical superadmin identity is reserved for startup provisioning.
     if username.casefold() == CANONICAL_SUPERADMIN_USERNAME:
         raise HTTPException(
             status_code=400, detail="This username is reserved. Please log in directly."
         )
 
     hashed_pwd = get_password_hash(password)
-    # Default role is 'user'
     new_user = User(
         username=username,
         hashed_password=hashed_pwd,

@@ -9,19 +9,48 @@ timeout, so even a wrong or hostile query cannot write or hang the database.
 """
 
 import json
+import random
 import re
+import time
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from backend.ai_config import AI_MODEL, openai_client
+from backend.ai_config import effective_ai_model, openai_client
 from backend.database import SQL_TIMEOUT_MS, SessionLocal
 from backend.ddl_docs import DDL_REF, cached_ddl
 from backend.schema_docs import DDL as COMPACT_DDL
 from backend.vectorstore import get_doc, schema_context
 
 MAX_ROWS = 200
+
+
+def _is_retryable(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    if any(s in msg for s in ["503", "429", "500", "502", "504", "unavailable", "high demand", "overloaded", "rate limit"]):
+        return True
+    sc = getattr(exc, "status_code", None)
+    if sc in (429, 500, 502, 503, 504):
+        return True
+    resp = getattr(exc, "response", None)
+    if resp is not None and getattr(resp, "status_code", None) in (429, 500, 502, 503, 504):
+        return True
+    return False
+
+
+def _call_with_retry(fn, retries: int = 3, base: float = 1.0):
+    last: Exception | None = None
+    for i in range(retries):
+        try:
+            return fn()
+        except Exception as e:
+            last = e
+            if not _is_retryable(e) or i == retries - 1:
+                raise
+            time.sleep(base * (2**i) + random.uniform(0, 0.5))
+    raise last  # type: ignore
+
 
 # Words that must never appear in generated SQL. The read-only transaction is
 # the real enforcement; this is a cheap early reject with a clear message.
@@ -172,7 +201,7 @@ def build_chart(columns: List[str], rows: List[List[Any]]) -> Optional[Dict[str,
     }
 
 
-def generate_sql(question: str, db: Session, model: Optional[str] = None) -> str:
+def generate_sql(question: str, db: Session, model: Optional[str] = None, base_url: Optional[str] = None) -> str:
     """Ask the LLM for SQL grounded in the generated DDL and retrieved metadata."""
     # The annotated DDL is always in the prompt; retrieval only adds the column
     # docs and exemplars that match the question.
@@ -182,10 +211,12 @@ def generate_sql(question: str, db: Session, model: Optional[str] = None) -> str
         context=schema_context(db, question, exclude=DDL_REF),
         question=question,
     )
-    response = openai_client().chat.completions.create(
-        model=model or AI_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0,
+    response = _call_with_retry(
+        lambda: openai_client(base_url=base_url).chat.completions.create(
+            model=model or effective_ai_model(),
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+        )
     )
     return sanitize_sql(response.choices[0].message.content or "")
 
@@ -237,6 +268,7 @@ async def answer(
     question: str,
     db: Optional[Session] = None,
     model: Optional[str] = None,
+    base_url: Optional[str] = None,
 ) -> AsyncIterator[Dict[str, Any]]:
     """NDJSON-ready frames: sql/table/chart/meta, then answer tokens, then done.
 
@@ -250,7 +282,7 @@ async def answer(
             if forecast is not None:
                 frames = forecast
             else:
-                sql = generate_sql(question, session, model)
+                sql = generate_sql(question, session, model, base_url)
                 frames = [
                     {"type": "sql", "sql": sql},
                     {"type": "table", **run_sql(sql, session)},
@@ -276,10 +308,12 @@ async def answer(
                 :6000
             ],
         )
-        stream = openai_client().chat.completions.create(
-            model=model or AI_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            stream=True,
+        stream = _call_with_retry(
+            lambda: openai_client(base_url=base_url).chat.completions.create(
+                model=model or effective_ai_model(),
+                messages=[{"role": "user", "content": prompt}],
+                stream=True,
+            )
         )
         for chunk in stream:
             token = chunk.choices[0].delta.content if chunk.choices else None

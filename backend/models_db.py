@@ -23,7 +23,6 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
-from backend.ai_config import EMBEDDING_DIM
 from backend.database import Base
 
 
@@ -118,5 +117,21 @@ class SchemaDoc(Base):
     # ponytail: no HNSW index — this table holds ~20 rows, so an exact scan is
     # already sub-millisecond. Add an index (and an embedding <=2000 dims) if
     # the corpus ever grows past a few thousand rows.
-    embedding = Column(Vector(EMBEDDING_DIM))
+    # Vector dim left open so admin can swap embedding models without migration.
+    embedding = Column(Vector)
+
+class AppSettings(Base):
+    """Singleton row (id=1) for admin-editable AI/Embedding config."""
+
+    __tablename__ = "app_settings"
+
+    id = Column(Integer, primary_key=True, default=1)
+    ai_base_url = Column(String, nullable=True)
+    embedding_base_url = Column(String, nullable=True)
+    ai_api_key = Column(String, nullable=True)
+    embedding_api_key = Column(String, nullable=True)
+    ai_model = Column(String, nullable=True)
+    embedding_model = Column(String, nullable=True)
+    embedding_dim = Column(Integer, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

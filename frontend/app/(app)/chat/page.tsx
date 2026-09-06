@@ -21,8 +21,6 @@ export default function ChatPage() {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [question, setQuestion] = useState("");
   const [busy, setBusy] = useState(false);
-  const [models, setModels] = useState<string[]>([]);
-  const [model, setModel] = useState("");
   const bottom = useRef<HTMLDivElement>(null);
   const questionInput = useRef<HTMLInputElement>(null);
   // A ref, not state: nothing renders it, so it must not trigger a re-render.
@@ -56,12 +54,6 @@ export default function ChatPage() {
     if (!getToken()) return;
     api<{ history: Turn[] }>(`/api/history/${id}`)
       .then((data) => setTurns(data.history))
-      .catch(() => undefined);
-    api<{ models: { id: string }[]; default: string }>("/api/models")
-      .then((data) => {
-        setModels(data.models.map((item) => item.id));
-        setModel(data.default);
-      })
       .catch(() => undefined);
   }, []);
 
@@ -114,7 +106,6 @@ export default function ChatPage() {
         body: JSON.stringify({
           message,
           session_id: ensureSession(),
-          model,
         }),
       });
       if (!response.ok || !response.body) {
@@ -153,35 +144,14 @@ export default function ChatPage() {
             back as narrative, table and chart.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {models.length > 1 && (
-            <>
-              <label htmlFor="model" className="sr-only">
-                Model
-              </label>
-              <select
-                id="model"
-                value={model}
-                onChange={(event) => setModel(event.target.value)}
-                className="max-w-48 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs"
-              >
-                {models.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
-            </>
-          )}
-          <button
-            type="button"
-            onClick={clearChat}
-            aria-keyshortcuts="Control+N Meta+N"
-            className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-semibold hover:border-rose-400 hover:text-rose-300"
-          >
-            New chat
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={clearChat}
+          aria-keyshortcuts="Control+N Meta+N"
+          className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-semibold hover:border-rose-400 hover:text-rose-300"
+        >
+          New chat
+        </button>
       </header>
 
       {!turns.length && (

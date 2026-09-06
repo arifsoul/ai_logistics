@@ -29,7 +29,7 @@ from langgraph.graph.message import add_messages
 load_dotenv()
 
 # --- Configuration ---
-from backend.ai_config import AI_BASE_URL, AI_MODEL, API_KEY, EMBEDDING_MODEL
+from backend.ai_config import API_KEY, effective_ai_base_url, effective_ai_model, effective_embedding_base_url, effective_embedding_model
 
 CHROMA_PATH = "databases"
 
@@ -39,9 +39,9 @@ CHROMA_PATH = "databases"
 # ponytail: api_key falls back to a dummy so the app still boots without a key
 # (fails at call time with 401). Wire a startup health check if that's too late.
 embeddings = OpenAIEmbeddings(
-    model=EMBEDDING_MODEL,
+    model=effective_embedding_model(),
     api_key=API_KEY or "unset",
-    base_url=AI_BASE_URL,
+    base_url=effective_ai_base_url(),
     check_embedding_ctx_length=False,
     model_kwargs={"encoding_format": "float"},
 )
@@ -55,13 +55,13 @@ vector_store = Chroma(
 # --- Helper for Dynamic LLM ---
 def get_llm(model_name: str | None = None):
     return ChatOpenAI(
-        model=model_name or AI_MODEL,
+        model=model_name or effective_ai_model(),
         temperature=0,
         max_tokens=None,
         timeout=None,
         max_retries=2,
         api_key=API_KEY,
-        base_url=AI_BASE_URL,
+        base_url=effective_ai_base_url(),
         streaming=True,  # Ensure streaming is enabled
     )
 
@@ -96,7 +96,7 @@ def retrieve(state: State):
 async def generate(state: State, config: RunnableConfig):
     messages = state["messages"]
     context = state["context"]
-    model_name = state.get("model") or AI_MODEL
+    model_name = state.get("model") or effective_ai_model()
 
     # Instantiate LLM on the fly
     llm = get_llm(model_name)
@@ -265,7 +265,7 @@ async def query_rag(message: str, session_id: str, model_name: str | None = None
     # Run the graph
     input_state = {
         "messages": [HumanMessage(content=message)],
-        "model": model_name or AI_MODEL,
+        "model": model_name or effective_ai_model(),
         "session_id": session_id,
     }
 

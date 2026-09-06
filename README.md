@@ -33,7 +33,7 @@ flowchart LR
     API --> History[Chat history]
     Chat --> Retriever["Schema retrieval<br/>pgvector cosine search"]
     Retriever --> DB[("PostgreSQL / Supabase<br/>orders, schema_docs, users")]
-    Chat --> Model["OpenAI-compatible AI provider<br/>Gemini by default"]
+    Chat --> Model["Any OpenAI-compatible provider<br/>(OpenAI / Groq / Ollama / Google / ...)"]
     Chat -->|validated SELECT| DB
     Analytics -->|parameterized SQL| DB
     Seed["mock_logistics_data.csv<br/>backend.seed"] --> DB
@@ -53,7 +53,7 @@ flowchart LR
 - `analytics.py` — `LogisticsAnalytics.kpis()` / `query()` / `forecast()` — pure parameterized SQL, 3-month moving average + 15% buffer for forecast.
 - `auth.py` + `roles.py` — Argon2/bcrypt hashing, `python-jose` JWT (`SECRET_KEY`, `ACCESS_TOKEN_EXPIRE_MINUTES`), `get_current_user`/`get_current_admin`/`get_current_superadmin`, `CANONICAL_SUPERADMIN_USERNAME="super@admin.com"`, `validate_role_change`/`can_delete_user`.
 - `history.py` — persist `ChatSession`/`ChatMessage` per user, enforce ownership.
-- `ai_config.py` — `API_KEY`/`AI_BASE_URL`/`AI_MODEL`/`EMBEDDING_MODEL`/`EMBEDDING_DIM` (default `gemini-flash-latest` / `gemini-embedding-001` dim 3072), `openai_client()` for any OpenAI-compatible endpoint.
+- `ai_config.py` — `API_KEY` (`GROQ_API_KEY` fallback) / `AI_BASE_URL` / `AI_MODEL` / `EMBEDDING_MODEL` / `EMBEDDING_DIM` via `openai_client()` — any OpenAI-compatible endpoint (OpenAI, Groq, OpenRouter, Ollama, vLLM, LM Studio, Google AI Studio, …). Defaults to `gemini-flash-latest` / `gemini-embedding-001` dim 3072.
 - `cors.py` — `get_allowed_origins()` from `CORS_ORIGINS`.
 
 **Frontend** (`frontend/`) — Next.js 16 App Router, client-side fetching, no SSR data.
@@ -143,7 +143,7 @@ sequenceDiagram
 | Database access | SQLAlchemy 2.x, psycopg 3 (`psycopg[binary]`) | Engine, sessions, ORM |
 | Database | PostgreSQL 15+ / Supabase + `vector` extension | `orders`, `users`, `chat_sessions`, `chat_messages`, `schema_docs` |
 | Vector search | pgvector (`vectorstore.py`, `schema_docs.py`) | Cosine search schema metadata only (24 docs) |
-| AI integration | OpenAI-compatible API, Gemini default (`backend/ai_config.py`) | SQL generation, embeddings (`gemini-embedding-001` dim 3072), narration |
+| AI integration | Any OpenAI-compatible API (`backend/ai_config.py`) — OpenAI, Groq, OpenRouter, Ollama, vLLM, LM Studio, Google AI Studio, … | SQL generation, embeddings, narration. Defaults to `gemini-flash-latest` / `gemini-embedding-001` (dim 3072) |
 | SQL safety | `backend/sql_agent.py` guardrails + `READ ONLY` transaction + `SQL_TIMEOUT_MS` | Single SELECT/WITH, LIMIT 200, forbidden keywords |
 | Authentication | python-jose, Argon2 (`argon2-cffi`), bcrypt, passlib | JWT (`SECRET_KEY`), hashed passwords, role checks (`backend/auth.py`, `backend/roles.py`) |
 | Analytics | `backend/analytics.py` pure SQL | KPI, query, forecast (3-month MA + 15% buffer) |
@@ -325,11 +325,11 @@ Backend (`.env`, read by `backend/ai_config.py` and `backend/database.py`):
 
 | Variable | Notes |
 | --- | --- |
-| `API_KEY` | Key for the AI provider. Google AI Studio: <https://aistudio.google.com/apikey> |
-| `AI_BASE_URL` | Any OpenAI-compatible base URL. Defaults to Google AI Studio. |
-| `AI_MODEL` | Default chat model, e.g. `gemini-flash-latest`. The chat UI can override per request. |
-| `EMBEDDING_MODEL` | Embedding model for the schema metadata, e.g. `gemini-embedding-001`. |
-| `EMBEDDING_DIM` | Vector width of that model. `3072` for `gemini-embedding-001`. Changing it requires a re-seed. |
+| `API_KEY` | API key for the chosen provider (`API_KEY` preferred, `GROQ_API_KEY` fallback for legacy `.env`). |
+| `AI_BASE_URL` | OpenAI-compatible base URL ending in `/v1` (or `/v1beta/openai/` for Google). Defaults to Google AI Studio. |
+| `AI_MODEL` | Chat model ID for that provider (e.g. `gemini-flash-latest`, `gpt-4o-mini`, `llama-3.1-70b-versatile`). Chat UI can override per request via `GET /api/models`. |
+| `EMBEDDING_MODEL` | Embedding model ID for that provider (e.g. `gemini-embedding-001`, `text-embedding-3-small`, `nomic-embed-text`). |
+| `EMBEDDING_DIM` | Vector width of `EMBEDDING_MODEL` (e.g. `3072` for `gemini-embedding-001`, `1536` for `text-embedding-3-small`). Changing it requires `python -m backend.seed` to re-embed `schema_docs`. |
 | `DATABASE_URL` | `postgresql+psycopg://...` — the driver must be psycopg 3. |
 | `SQL_TIMEOUT_MS` | Hard ceiling on any generated query. Default `5000`. |
 | `CORS_ORIGINS` | Comma-separated browser origins allowed to call the API. |
@@ -371,17 +371,44 @@ python -W ignore::ResourceWarning -m unittest discover -s tests
 
 1. Create a new Space at https://huggingface.co/new-space with SDK `Docker` and the `Blank` template.
 2. Push this repository to the Space (`git push` to `https://huggingface.co/spaces/<user>/<space>`). Hugging Face builds the `Dockerfile` automatically and exposes port `7860`.
-3. In the Space **Settings → Variables and secrets**, set:
+3. In the Space **Settings → Variables and secrets**, set (any OpenAI-compatible provider works):
    ```
    DATABASE_URL=postgresql+psycopg://... (Supabase pooler)
-   API_KEY=<google_ai_studio_key>
+   API_KEY=<provider_api_key>              # OpenAI / Groq / OpenRouter / Google AI Studio / ...
+   AI_BASE_URL=<openai_compatible_base_url>
+   AI_MODEL=<chat_model_id>
+   EMBEDDING_MODEL=<embedding_model_id>
+   EMBEDDING_DIM=<vector_dim>
+   SECRET_KEY=<random_long>
+   CORS_ORIGINS=https://<your-netlify>.netlify.app,https://<user>-<space>.hf.space
+   ```
+   Examples — pick one provider (keep `EMBEDDING_DIM` matched to `EMBEDDING_MODEL`):
+   ```
+   # Google AI Studio (default)
    AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
    AI_MODEL=gemini-flash-latest
    EMBEDDING_MODEL=gemini-embedding-001
    EMBEDDING_DIM=3072
-   SECRET_KEY=<random_long>
-   CORS_ORIGINS=https://<your-netlify>.netlify.app,https://<user>-<space>.hf.space
+
+   # OpenAI
+   AI_BASE_URL=https://api.openai.com/v1
+   AI_MODEL=gpt-4o-mini
+   EMBEDDING_MODEL=text-embedding-3-small
+   EMBEDDING_DIM=1536
+
+   # Groq
+   AI_BASE_URL=https://api.groq.com/openai/v1
+   AI_MODEL=llama-3.1-70b-versatile
+   EMBEDDING_MODEL=nomic-embed-text  # or use OpenAI/Google for embeddings
+   EMBEDDING_DIM=768
+
+   # Local (Ollama / vLLM / LM Studio)
+   AI_BASE_URL=http://host.docker.internal:11434/v1
+   AI_MODEL=llama3.1
+   EMBEDDING_MODEL=nomic-embed-text
+   EMBEDDING_DIM=768
    ```
+   After changing `EMBEDDING_MODEL`/`EMBEDDING_DIM`, re-seed: `python -m backend.seed`.
   The only protected superadmin username is `super@admin.com`; every other
   account may only use the `admin` or `user` role.
 4. Seed Supabase once, including the superadmin password:

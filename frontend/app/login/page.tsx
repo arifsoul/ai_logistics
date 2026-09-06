@@ -4,11 +4,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { login, register } from "@/lib/api";
+import { login } from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [mode, setMode] = useState<"login" | "register">("login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -19,9 +18,6 @@ export default function LoginPage() {
     setError("");
     setBusy(true);
     try {
-      if (mode === "register") {
-        await register(username, password);
-      }
       await login(username, password);
       router.replace("/chat");
     } catch (caught) {
@@ -37,9 +33,8 @@ export default function LoginPage() {
         <p className="text-xs font-semibold uppercase tracking-[0.25em] text-cyan-400">
           Logistics AI
         </p>
-        <h1 className="mt-2 text-2xl font-bold tracking-tight">
-          {mode === "login" ? "Sign in" : "Create an account"}
-        </h1>
+        <h1 className="mt-2 text-2xl font-bold tracking-tight">Sign in</h1>
+        <p className="mt-1 text-xs text-slate-500">Akun dibuat oleh admin. Hubungi admin jika belum punya akun.</p>
 
         <form onSubmit={submit} className="mt-6 space-y-4">
           <div>
@@ -66,9 +61,7 @@ export default function LoginPage() {
               onChange={(event) => setPassword(event.target.value)}
               required
               minLength={4}
-              autoComplete={
-                mode === "login" ? "current-password" : "new-password"
-              }
+              autoComplete="current-password"
               className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400"
             />
           </div>
@@ -84,22 +77,9 @@ export default function LoginPage() {
             disabled={busy}
             className="w-full rounded-lg bg-cyan-500 px-4 py-2 text-sm font-bold text-slate-950 disabled:opacity-60"
           >
-            {busy ? "Working…" : mode === "login" ? "Sign in" : "Register"}
+            {busy ? "Working…" : "Sign in"}
           </button>
         </form>
-
-        <button
-          type="button"
-          onClick={() => {
-            setMode(mode === "login" ? "register" : "login");
-            setError("");
-          }}
-          className="mt-5 text-sm text-slate-400 underline hover:text-cyan-300"
-        >
-          {mode === "login"
-            ? "No account? Register"
-            : "Already registered? Sign in"}
-        </button>
 
         <p className="mt-6 text-xs text-slate-500">
           Questions are answered from the logistics Postgres database.{" "}

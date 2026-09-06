@@ -1,13 +1,14 @@
 from pydantic import BaseModel
 from typing import List, Optional
 
-from backend.ai_config import AI_MODEL
+from backend.ai_config import effective_ai_model
 
 
 class ChatRequest(BaseModel):
     message: str
     session_id: str
-    model: str = AI_MODEL
+    model: str | None = None
+    base_url: str | None = None
 
 
 class ChatResponse(BaseModel):

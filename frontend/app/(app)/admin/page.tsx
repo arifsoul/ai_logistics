@@ -19,9 +19,30 @@ export default function AdminPage() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [revealed, setRevealed] = useState<Record<number, string>>({});
-  // Read from localStorage only after mount, otherwise the server render (no
-  // role) and the first client render disagree and hydration fails.
   const [myId, setMyId] = useState(0);
+  // AI config (admin-editable)
+  const [aiBaseUrl, setAiBaseUrl] = useState("");
+  const [embBaseUrl, setEmbBaseUrl] = useState("");
+  const [aiApiKey, setAiApiKey] = useState("");
+  const [embApiKey, setEmbApiKey] = useState("");
+  const [aiModel, setAiModel] = useState("");
+  const [embModel, setEmbModel] = useState("");
+  const [embDim, setEmbDim] = useState("3072");
+  const [aiModels, setAiModels] = useState<string[]>([]);
+  const [embModels, setEmbModels] = useState<string[]>([]);
+  const [cfgLoading, setCfgLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [aiModelsLoading, setAiModelsLoading] = useState(false);
+  const [embModelsLoading, setEmbModelsLoading] = useState(false);
+  const [aiModelsError, setAiModelsError] = useState("");
+  const [embModelsError, setEmbModelsError] = useState("");
+  const [embDims, setEmbDims] = useState<Record<string, number>>({});
+  const [hasAiKey, setHasAiKey] = useState(false);
+  const [hasEmbKey, setHasEmbKey] = useState(false);
+  const [aiTest, setAiTest] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [embTest, setEmbTest] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [aiTesting, setAiTesting] = useState(false);
+  const [embTesting, setEmbTesting] = useState(false);
 
   const load = () =>
     api<{ users: UserRow[] }>("/api/users")
@@ -31,6 +52,112 @@ export default function AdminPage() {
       .catch((caught) =>
         setError(caught instanceof Error ? caught.message : "Could not load"),
       );
+
+  const loadCfg = () =>
+    api<{ ai_base_url: string; embedding_base_url: string; ai_model: string; embedding_model: string; embedding_dim: number; has_ai_api_key: boolean; has_embedding_api_key: boolean; embedding_dims: Record<string, number> }>("/api/ai-config")
+      .then((c) => {
+        setAiBaseUrl(c.ai_base_url); setEmbBaseUrl(c.embedding_base_url);
+        setAiModel(c.ai_model); setEmbModel(c.embedding_model); setEmbDim(String(c.embedding_dim));
+        setHasAiKey(!!c.has_ai_api_key); setHasEmbKey(!!c.has_embedding_api_key);
+        if (c.embedding_dims) setEmbDims(c.embedding_dims);
+      })
+      .catch(() => undefined);
+
+  const fetchAiModels = async (base: string, kind: "chat" | "embedding") => {
+    const isEmb = kind === "embedding";
+    const key = isEmb ? embApiKey : aiApiKey;
+    if (isEmb) { setEmbModelsLoading(true); setEmbModelsError(""); } else { setAiModelsLoading(true); setAiModelsError(""); }
+    try {
+      const params = new URLSearchParams({ kind });
+      if (base.trim()) params.set("base_url", base.trim());
+      if (key.trim()) params.set("api_key", key.trim());
+      const d = await api<{ models: { id: string }[] }>(`/api/models?${params.toString()}`);
+      const ids = d.models.map((m) => m.id);
+      if (isEmb) setEmbModels(ids); else setAiModels(ids);
+      if (!ids.length) {
+        if (isEmb) setEmbModelsError("No models returned — check base URL / API key");
+        else setAiModelsError("No models returned — check base URL / API key");
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Fetch failed";
+      if (isEmb) setEmbModelsError(msg); else setAiModelsError(msg);
+    } finally {
+      if (isEmb) setEmbModelsLoading(false); else setAiModelsLoading(false);
+    }
+  };
+
+  const testAiModel = async () => {
+    if (!aiModel.trim()) { setAiTest({ ok: false, msg: "Isi AI model dulu" }); return; }
+    setAiTesting(true); setAiTest(null);
+    try {
+      const p = new URLSearchParams({ model: aiModel.trim(), kind: "chat" });
+      if (aiBaseUrl.trim()) p.set("base_url", aiBaseUrl.trim());
+      if (aiApiKey.trim()) p.set("api_key", aiApiKey.trim());
+      const r = await api<{ valid: boolean; error?: string }>(`/api/models/validate?${p.toString()}`);
+      setAiTest(r.valid ? { ok: true, msg: "Valid ✓" } : { ok: false, msg: r.error || "Model tidak ditemukan di endpoint" });
+    } catch (e) { setAiTest({ ok: false, msg: e instanceof Error ? e.message : "Test failed" }); }
+    finally { setAiTesting(false); }
+  };
+  const testEmbModel = async () => {
+    if (!embModel.trim()) { setEmbTest({ ok: false, msg: "Isi embedding model dulu" }); return; }
+    setEmbTesting(true); setEmbTest(null);
+    try {
+      const p = new URLSearchParams({ model: embModel.trim(), kind: "embedding" });
+      if (embBaseUrl.trim()) p.set("base_url", embBaseUrl.trim());
+      if (embApiKey.trim()) p.set("api_key", embApiKey.trim());
+      const r = await api<{ valid: boolean; error?: string }>(`/api/models/validate?${p.toString()}`);
+      setEmbTest(r.valid ? { ok: true, msg: "Valid ✓" } : { ok: false, msg: r.error || "Model tidak ditemukan di endpoint" });
+    } catch (e) { setEmbTest({ ok: false, msg: e instanceof Error ? e.message : "Test failed" }); }
+    finally { setEmbTesting(false); }
+  };
+
+  // Auto-fetch when base URL or API key changes (debounced)
+  useEffect(() => {
+    if (!aiBaseUrl) return;
+    const t = setTimeout(() => { void fetchAiModels(aiBaseUrl, "chat"); }, 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiBaseUrl, aiApiKey]);
+  useEffect(() => {
+    if (!embBaseUrl) return;
+    const t = setTimeout(() => { void fetchAiModels(embBaseUrl, "embedding"); }, 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [embBaseUrl, embApiKey]);
+
+  // Auto-adjust embedding dim when model changes
+  useEffect(() => {
+    const d = embDims[embModel] ?? embDims[embModel.toLowerCase()];
+    if (d) setEmbDim(String(d));
+  }, [embModel, embDims]);
+
+  const saveCfg = async () => {
+    setCfgLoading(true); setError(""); setNotice("");
+    try {
+      const body: Record<string, unknown> = { ai_base_url: aiBaseUrl, embedding_base_url: embBaseUrl, ai_model: aiModel, embedding_model: embModel, embedding_dim: parseInt(embDim, 10) };
+      if (aiApiKey.trim()) body.ai_api_key = aiApiKey.trim();
+      if (embApiKey.trim()) body.embedding_api_key = embApiKey.trim();
+      await api("/api/ai-config", { method: "PUT", body: JSON.stringify(body) });
+      setNotice("AI config saved — env vars remain fallback if DB keys cleared");
+      setAiApiKey(""); setEmbApiKey("");
+      await loadCfg();
+    } catch (e) { setError(e instanceof Error ? e.message : "Save failed"); }
+    finally { setCfgLoading(false); }
+  };
+
+  const syncCfg = async () => {
+    setSyncing(true); setError(""); setNotice("");
+    try {
+      const body: Record<string, unknown> = { ai_base_url: aiBaseUrl, embedding_base_url: embBaseUrl, ai_model: aiModel, embedding_model: embModel, embedding_dim: parseInt(embDim, 10) };
+      if (aiApiKey.trim()) body.ai_api_key = aiApiKey.trim();
+      if (embApiKey.trim()) body.embedding_api_key = embApiKey.trim();
+      const r = await api<{ documents: number; embedding_model: string }>("/api/ai-config/sync", { method: "POST", body: JSON.stringify(body) });
+      setNotice(`Synced: ${r.documents} docs re-embedded with ${r.embedding_model}`);
+      setAiApiKey(""); setEmbApiKey("");
+      await loadCfg();
+    } catch (e) { setError(e instanceof Error ? e.message : "Sync failed"); }
+    finally { setSyncing(false); }
+  };
 
   useEffect(() => {
     // The backend enforces this too; bouncing early avoids a bare 403 screen.
@@ -44,6 +171,7 @@ export default function AdminPage() {
       .then((user) => setMyId(user.id))
       .catch(() => setMyId(0));
     load();
+    loadCfg();
   }, [router]);
 
   async function createUser(event: React.FormEvent) {
@@ -132,6 +260,71 @@ export default function AdminPage() {
         </p>
       )}
       {notice && <p className="text-cyan-300">{notice}</p>}
+
+      <section className="rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-4">
+        <h2 className="text-lg font-semibold">AI & Embedding config</h2>
+        <p className="text-xs text-slate-400">Base URL AI dan Embedding dipisah + API key masing-masing (kosongkan untuk pakai env var — production/local fallback). Dropdown auto-fetch dari base URL + key. Klik Test untuk validasi model, Sync untuk simpan + re-seed vector DB.</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-2">
+            <label className="text-sm text-slate-400">AI Base URL</label>
+            <div className="mt-1 flex gap-1">
+              <input value={aiBaseUrl} onChange={(e) => setAiBaseUrl(e.target.value)} placeholder="https://api.openai.com/v1" className="flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400" />
+              <button type="button" onClick={() => fetchAiModels(aiBaseUrl, "chat")} disabled={aiModelsLoading} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold hover:border-cyan-400 disabled:opacity-50">{aiModelsLoading ? "…" : "Load"}</button>
+            </div>
+            <label className="text-sm text-slate-400">AI API Key {hasAiKey && !aiApiKey ? <span className="text-emerald-400">(env/DB ✓)</span> : null}</label>
+            <div className="flex gap-1">
+              <input type="password" value={aiApiKey} onChange={(e) => setAiApiKey(e.target.value)} placeholder={hasAiKey ? "•••••••• (kosongkan = pakai env/DB)" : "sk-..."} className="flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400" />
+              {hasAiKey && <button type="button" onClick={async () => { await api("/api/ai-config", { method: "PUT", body: JSON.stringify({ ai_api_key: "" }) }); setAiApiKey(""); await loadCfg(); setNotice("AI key cleared — fallback ke env var"); }} className="rounded-lg border border-slate-700 px-2 py-1 text-xs hover:border-rose-400">Clear</button>}
+            </div>
+            {aiModelsError && <p className="text-xs text-rose-400">{aiModelsError}</p>}
+            <label className="text-sm text-slate-400">AI Model</label>
+            {aiModels.length ? (
+              <select value={aiModel} onChange={(e) => setAiModel(e.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
+                {aiModels.map((m) => <option key={m} value={m}>{m}</option>)}
+                {!aiModels.includes(aiModel) && aiModel && <option value={aiModel}>{aiModel} (current)</option>}
+              </select>
+            ) : (
+              <input value={aiModel} onChange={(e) => setAiModel(e.target.value)} placeholder="gemini-flash-latest" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400" />
+            )}
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={testAiModel} disabled={aiTesting} className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-semibold hover:border-cyan-400 disabled:opacity-50">{aiTesting ? "Testing…" : "Test model"}</button>
+              {aiTest && <span className={`text-xs ${aiTest.ok ? "text-emerald-400" : "text-rose-400"}`}>{aiTest.msg}</span>}
+            </div>
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm text-slate-400">Embedding Base URL</label>
+            <div className="mt-1 flex gap-1">
+              <input value={embBaseUrl} onChange={(e) => setEmbBaseUrl(e.target.value)} placeholder="https://api.openai.com/v1" className="flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400" />
+              <button type="button" onClick={() => fetchAiModels(embBaseUrl, "embedding")} disabled={embModelsLoading} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold hover:border-cyan-400 disabled:opacity-50">{embModelsLoading ? "…" : "Load"}</button>
+            </div>
+            <label className="text-sm text-slate-400">Embedding API Key {hasEmbKey && !embApiKey ? <span className="text-emerald-400">(env/DB ✓)</span> : null}</label>
+            <div className="flex gap-1">
+              <input type="password" value={embApiKey} onChange={(e) => setEmbApiKey(e.target.value)} placeholder={hasEmbKey ? "•••••••• (kosongkan = pakai env/DB)" : "sk-..."} className="flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400" />
+              {hasEmbKey && <button type="button" onClick={async () => { await api("/api/ai-config", { method: "PUT", body: JSON.stringify({ embedding_api_key: "" }) }); setEmbApiKey(""); await loadCfg(); setNotice("Embedding key cleared — fallback ke env var"); }} className="rounded-lg border border-slate-700 px-2 py-1 text-xs hover:border-rose-400">Clear</button>}
+            </div>
+            {embModelsError && <p className="text-xs text-rose-400">{embModelsError}</p>}
+            <label className="text-sm text-slate-400">Embedding Model (filter: embedding only)</label>
+            {embModels.length ? (
+              <select value={embModel} onChange={(e) => setEmbModel(e.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
+                {embModels.map((m) => <option key={m} value={m}>{m}</option>)}
+                {!embModels.includes(embModel) && embModel && <option value={embModel}>{embModel} (current)</option>}
+              </select>
+            ) : (
+              <input value={embModel} onChange={(e) => setEmbModel(e.target.value)} placeholder="text-embedding-3-small" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400" />
+            )}
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={testEmbModel} disabled={embTesting} className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-semibold hover:border-cyan-400 disabled:opacity-50">{embTesting ? "Testing…" : "Test model"}</button>
+              {embTest && <span className={`text-xs ${embTest.ok ? "text-emerald-400" : "text-rose-400"}`}>{embTest.msg}</span>}
+            </div>
+            <label className="text-sm text-slate-400">Embedding Dim {embDims[embModel] || embDims[embModel.toLowerCase()] ? <span className="text-slate-500">auto {embDims[embModel] ?? embDims[embModel.toLowerCase()]}</span> : null}</label>
+            <input value={embDim} onChange={(e) => setEmbDim(e.target.value)} placeholder="3072" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400" />
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button type="button" onClick={saveCfg} disabled={cfgLoading} className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-semibold hover:border-cyan-400 disabled:opacity-50">Save</button>
+          <button type="button" onClick={syncCfg} disabled={syncing} className="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-bold text-slate-950 disabled:opacity-50">{syncing ? "Syncing…" : "Sync (save + re-seed vectors)"}</button>
+        </div>
+      </section>
 
       <form
         onSubmit={createUser}
