@@ -21,6 +21,7 @@ from backend.models import (
     AnalyticsAskRequest,
     ChatRequest,
     ForecastRequest,
+    UserResponse,
     UserListResponse,
     UserRoleUpdate,
 )
