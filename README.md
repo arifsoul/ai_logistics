@@ -22,6 +22,137 @@ Postgres, and nothing else feeds the answers.
   columns and their allowed values before it writes SQL. There is no document
   upload and no Chroma.
 
+## Arsitektur
+
+```mermaid
+flowchart LR
+    Browser["Next.js frontend<br/>Netlify"] -->|HTTPS + Bearer JWT| API["FastAPI backend<br/>Hugging Face / Render"]
+    API --> Auth["JWT authentication<br/>Argon2 password hashing"]
+    API --> Chat["/api/chat<br/>NDJSON streaming"]
+    API --> Analytics["/api/analytics<br/>KPI, query, forecast"]
+    API --> History[Chat history]
+    Chat --> Retriever["Schema retrieval<br/>pgvector cosine search"]
+    Retriever --> DB[("PostgreSQL / Supabase<br/>orders, schema_docs, users")]
+    Chat --> Model["OpenAI-compatible AI provider<br/>Gemini by default"]
+    Chat -->|validated SELECT| DB
+    Analytics -->|parameterized SQL| DB
+    Seed["mock_logistics_data.csv<br/>backend.seed"] --> DB
+```
+
+### Responsibility Split
+
+**Backend** lives in `backend/` and owns data access, authorization, SQL
+validation, analytics, forecasting, and history persistence.
+
+- `main.py` provides FastAPI routes, CORS, startup migrations, chat streaming,
+  history, analytics, authentication, and admin endpoints.
+- `database.py` creates the SQLAlchemy engine and session from `DATABASE_URL`.
+- `models_db.py` defines the `User`, `ChatSession`, `ChatMessage`, `Order`, and
+  `SchemaDoc` models.
+- `seed.py` loads the CSV into `orders` and creates embeddings for schema
+  metadata.
+- `ddl_docs.py`, `schema_docs.py`, and `vectorstore.py` build and retrieve
+  schema context with pgvector.
+- `sql_agent.py` generates SQL, applies read-only guardrails, executes queries,
+  and emits `sql`, `table`, `chart`, `token`, and `done` frames.
+- `analytics.py` runs controlled KPI/analytics queries and stock forecasts.
+- `auth.py` manages password hashing, JWTs, and role checks.
+- `history.py` stores chat turns and their result payloads.
+
+**Frontend** lives in `frontend/` and owns the user experience and result
+rendering.
+
+- `app/login` handles login and registration.
+- `app/(app)/chat` handles questions, model selection, sessions, NDJSON
+  streaming, tables, charts, and SQL details.
+- `app/(app)/dashboard` displays fixed operational KPIs and charts.
+- `app/(app)/admin` provides user management for administrators.
+- `components/` contains the navbar, Chart.js canvas, and data table.
+- `lib/api.ts` manages the bearer token in `localStorage`.
+- `lib/frames.ts` parses the NDJSON stream from the chat endpoint.
+
+## Workflow
+
+### Authentication
+
+1. The user signs in through `POST /api/auth/token` or registers through
+   `POST /api/auth/register`.
+2. The backend verifies the password and returns a JWT with the user's role.
+3. The frontend stores the token and sends it as
+   `Authorization: Bearer <token>`.
+4. `NavBar` validates the token through `GET /api/users/me`; invalid tokens are
+   cleared and the user is redirected to `/login`.
+5. The backend remains the source of truth for current-user, admin, and
+   superadmin authorization.
+
+### Chat Question Flow
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as Next.js chat UI
+    participant API as FastAPI chat endpoint
+    participant RAG as pgvector schema retrieval
+    participant AI as AI provider
+    participant DB as PostgreSQL
+
+    User->>UI: Enter a question
+    UI->>API: POST message + session_id + model
+    API->>RAG: Embed question and retrieve metadata
+    RAG-->>API: DDL + column docs + query examples
+    API->>AI: Request one SELECT grounded in the schema
+    AI-->>API: Raw SQL
+    API->>API: Sanitize, add LIMIT, read-only transaction
+    API->>DB: Run SELECT with timeout
+    DB-->>API: Rows and columns
+    API->>API: Build table and chart specs
+    API->>AI: Request narration from the result only
+    AI-->>API: Narration tokens
+    API-->>UI: Stream NDJSON frames
+    UI-->>User: Narrative, table, and chart
+```
+
+  Query safety rules:
+
+  - only one `SELECT`/`WITH` statement is accepted;
+  - mutation/DDL keywords and risky functions are rejected;
+  - queries run inside a `READ ONLY` transaction;
+  - queries without `LIMIT` are capped at 200 rows;
+  - `SQL_TIMEOUT_MS` limits execution time;
+  - narration may only use numbers from the query result.
+
+  Forecast questions such as `forecast stock for PAPER-0197 for 4 months` use a
+  deterministic path: the system calculates a three-month moving average, creates
+  the projection, and applies a 15% safety buffer. This path does not ask the
+  model to generate forecast SQL.
+
+  ### Analytics and History
+
+  The dashboard calls `/api/analytics/kpis` and `/api/analytics/query` on load.
+  All KPIs and charts are calculated directly by `LogisticsAnalytics` from
+  PostgreSQL; specific questions remain in the chat workflow.
+
+  The frontend stores one `session_id` in `localStorage` so history survives a
+  reload. The backend associates each session with its owner and rejects access
+  from other users. Every user and assistant turn is stored in `chat_messages`
+  with the table, chart, SQL, or forecast metadata payload.
+
+## Technology Stack
+
+| Area | Technology | Role |
+| --- | --- | --- |
+| Backend API | Python 3.11+, FastAPI, Uvicorn | REST API and streaming responses |
+| Database access | SQLAlchemy, psycopg 3 | Engine, sessions, ORM, and SQL |
+| Database | PostgreSQL 15+ / Supabase | Orders, users, sessions, history, and metadata |
+| Vector search | pgvector | Cosine search for schema metadata |
+| AI integration | OpenAI-compatible API, Gemini default | SQL, embeddings, and narration |
+| Authentication | python-jose, Argon2, bcrypt compatibility | JWT and password hashing |
+| Frontend | Next.js 16, React 19, TypeScript 5 | UI and client-side fetching |
+| Styling | Tailwind CSS 4 | Layout and styling |
+| Visualization | Chart.js 4 | Line and bar charts |
+| Deployment | Docker, Hugging Face Spaces, Netlify, Render | Application hosting |
+| Testing | Python `unittest` | Backend tests with an AI stub |
+
 ## Layout
 
 ```
@@ -38,7 +169,7 @@ backend/
   analytics.py            fixed KPI/chart queries (pure SQL)
   history.py              chat turns persisted in Postgres
 frontend/                 Next.js frontend
-tests/                    21 unittest tests
+tests/                    25 unittest tests
 ```
 
 ## Prerequisites
@@ -101,6 +232,61 @@ questions are asked. Register an account on first use.
 | `/dashboard` | Fixed KPI cards and charts only — no input fields. |
 | `/admin` | User list, create user, change role. Admins only. |
 
+## Application Screenshots
+
+### Login
+
+![Logistics AI login page](docs/screenshots/login.png)
+
+*Caption: Login page for authenticating users before they access chat, analytics,
+and administration features.*
+
+### Chat Workspace
+
+![Logistics AI chat workspace](docs/screenshots/room_chat.png)
+
+*Caption: Chat workspace with sample questions, AI model selection, a new-chat
+control, and the input for questions about the logistics database.*
+
+### Chat Answer
+
+![Chat answer with a chart and table](docs/screenshots/answer_chat.png)
+
+*Caption: A text-to-SQL answer showing the narrative, carrier delay-rate chart,
+query result table, and the option to inspect generated SQL.*
+
+### Dashboard Analytics
+
+![Logistics AI analytics dashboard](docs/screenshots/analytics_dashboard.png)
+
+*Caption: Operations dashboard with total orders, delivered, delayed, on-time
+rate, and average delivery KPIs, plus volume and delivery-performance charts.*
+
+## How to Use
+
+The live frontend is available at <https://logistics-ai.netlify.app/>. The
+backend Space is <https://huggingface.co/spaces/arifsoul/chatbot_rag>.
+
+1. Open the frontend and sign in, or select **Register** to create an account.
+2. On `/chat`, choose a sample question or type a question about the logistics
+  database, then select **Ask**.
+3. Read the generated narrative and inspect the returned chart and table. Open
+  **Show SQL** when you need to review the generated read-only query.
+4. Use **New chat** to start a new session. The current session history is
+  restored after a page reload for the same browser account.
+5. Open **Analytics** for fixed KPI and operational charts.
+6. Users with the `admin` or `superadmin` role can open **Admin** to manage
+  users, roles, and password resets.
+
+Example questions:
+
+```text
+Which carrier has the highest delay rate?
+Monthly order volume for 2025
+Average delivery days per region
+Forecast stock for PAPER-0197 for 4 months
+```
+
 ## Environment variables
 
 Backend (`.env`, read by `backend/ai_config.py` and `backend/database.py`):
@@ -136,7 +322,7 @@ Frontend (`frontend/.env.local`):
 5. Both turns are written to `chat_messages`, so reloading `/chat` replays the
    exact same narrative, table and chart.
 
-Stock questions ("prediksi stok SKU-x untuk 4 bulan") take a separate path: a
+Stock questions ("forecast stock for SKU-x for 4 months") take a separate path: a
 three-month moving average with a 15% safety buffer, returned as actual +
 forecast rows.
 
@@ -146,15 +332,15 @@ forecast rows.
 python -W ignore::ResourceWarning -m unittest discover -s tests
 ```
 
-21 tests. They stub the AI provider, so no API key or network access is needed.
+25 tests. They stub the AI provider, so no API key or network access is needed.
 
 ## Deploy
 
-**Backend — Hugging Face Spaces (Docker)** — repo ini siap deploy sebagai Space Docker:
+**Backend — Hugging Face Spaces (Docker)** — this repository is ready to deploy as a Docker Space:
 
-1. Buat Space baru di https://huggingface.co/new-space → SDK `Docker` → `Blank`.
-2. Push repo ini ke Space (`git push` ke `https://huggingface.co/spaces/<user>/<space>`). HF build `Dockerfile` otomatis, expose `7860`.
-3. Di Space **Settings → Variables and secrets**, set:
+1. Create a new Space at https://huggingface.co/new-space with SDK `Docker` and the `Blank` template.
+2. Push this repository to the Space (`git push` to `https://huggingface.co/spaces/<user>/<space>`). Hugging Face builds the `Dockerfile` automatically and exposes port `7860`.
+3. In the Space **Settings → Variables and secrets**, set:
    ```
    DATABASE_URL=postgresql+psycopg://... (Supabase pooler)
    API_KEY=<google_ai_studio_key>
@@ -167,20 +353,20 @@ python -W ignore::ResourceWarning -m unittest discover -s tests
    SUPER_USERNAME=admin
    SUPER_PASSWORD=admin
    ```
-4. Seed sekali ke Supabase: `DATABASE_URL=<supabase> python -m backend.seed`
-5. Space URL jadi `NEXT_PUBLIC_API_URL` untuk frontend. Health check: `GET /` dan `/docs`.
+4. Seed Supabase once: `DATABASE_URL=<supabase> python -m backend.seed`.
+5. Use the Space URL as `NEXT_PUBLIC_API_URL` for the frontend. Health checks are `GET /` and `/docs`.
 
-`Dockerfile` jalankan `uvicorn backend.main:app --host 0.0.0.0 --port $PORT` (`$PORT=7860` di HF). Frontmatter `sdk: docker` + `app_port: 7860` sudah di `README.md`.
+The `Dockerfile` runs `uvicorn backend.main:app --host 0.0.0.0 --port $PORT` (`$PORT=7860` on Hugging Face). The `sdk: docker` and `app_port: 7860` frontmatter is already present in `README.md`.
 
-**Backend — alternatif (Render / host lain)** — host ASGI apapun:
+**Backend — alternative (Render / another host)** — any ASGI host:
 
 ```
 uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ```
 
-Run `python -m backend.seed` sekali ke Supabase. Tambah origin frontend ke `CORS_ORIGINS`.
+Run `python -m backend.seed` once against Supabase. Add the frontend origin to `CORS_ORIGINS`.
 
-**Frontend** — Netlify pick up `frontend/netlify.toml` (base `frontend`, `@netlify/plugin-nextjs`). Set `NEXT_PUBLIC_API_URL` di Netlify ke origin API (HF Space URL atau Render URL).
+**Frontend** — Netlify picks up `frontend/netlify.toml` (base `frontend`, `@netlify/plugin-nextjs`). Set `NEXT_PUBLIC_API_URL` in Netlify to the API origin (the HF Space URL or Render URL).
 
 ## Assumptions and limitations
 

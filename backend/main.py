@@ -43,6 +43,7 @@ from datetime import date
 from backend.ai_config import AI_BASE_URL, AI_MODEL, openai_client
 from backend.analytics import LogisticsAnalytics
 from backend import ddl_docs, history, sql_agent
+from backend.cors import get_allowed_origins
 
 app = FastAPI()
 analytics = LogisticsAnalytics()
@@ -174,13 +175,7 @@ async def startup_event():
 
 # CORS. An explicit origin list, not "*": `allow_credentials=True` with a
 # wildcard is rejected by browsers, and the Next.js client is cross-origin.
-ALLOWED_ORIGINS = [
-    origin.strip()
-    for origin in os.getenv(
-        "CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
-    ).split(",")
-    if origin.strip()
-]
+ALLOWED_ORIGINS = get_allowed_origins(os.getenv("CORS_ORIGINS"))
 
 app.add_middleware(
     CORSMiddleware,
