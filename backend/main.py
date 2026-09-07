@@ -791,7 +791,7 @@ _LANDING_HTML_TEMPLATE = """<!doctype html>
 </html>"""
 
 def _landing_html() -> str:
-    return _LANDING_HTML_TEMPLATE.format(frontend_url=_frontend_url())
+    return _LANDING_HTML_TEMPLATE.replace("{frontend_url}", _frontend_url())
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
