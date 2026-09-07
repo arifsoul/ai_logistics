@@ -93,6 +93,9 @@ netlify.toml               Netlify config
 
 ## Screenshots
 
+![Hugging Face Space — Landing](https://i.imgur.com/AOkGv2A.png)
+*Hugging Face Space landing — [Logistics Analytics API by arifsoul](https://huggingface.co/spaces/arifsoul/chatbot_rag) → Open App → https://logistics-ai.netlify.app/. If Sleeping, click Restart. `GET /` returns HTML so preview renders.*
+
 ![Login](https://i.imgur.com/7potfjp.png)
 *Login — authentication before accessing chat/analytics/admin.*
 

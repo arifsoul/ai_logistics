@@ -287,6 +287,12 @@ questions are asked. Sign in with an existing account (new accounts are created 
 
 ## Application Screenshots
 
+### Hugging Face Space — Landing
+
+![Logistics Analytics API — Hugging Face Space landing](https://i.imgur.com/AOkGv2A.png)
+
+*Caption: Entry point at [Logistics Analytics API — a Hugging Face Space by arifsoul](https://huggingface.co/spaces/arifsoul/chatbot_rag). Click **Open App → logistics-ai.netlify.app** ([https://logistics-ai.netlify.app/](https://logistics-ai.netlify.app/)) to open the live web app — do not use `localhost` for the hosted demo. If the Space is **Sleeping**, click **Restart** on the Space page to wake the backend; `GET /` always returns HTML so the Space preview renders the landing correctly.*
+
 ### Login
 
 ![Logistics AI login page](https://i.imgur.com/7potfjp.png)
