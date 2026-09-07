@@ -251,10 +251,6 @@ async def chat_endpoint(
     return StreamingResponse(generate(), media_type="application/x-ndjson")
 
 
-def _is_embedding_model_id(mid: str) -> bool:
-    m = mid.lower()
-    return any(k in m for k in ("embed", "bge", "e5-", "nomic", "minilm", "gte", "uae", "instructor"))
-
 @app.get("/api/models")
 async def get_models(
     base_url: str | None = Query(default=None),
@@ -264,8 +260,7 @@ async def get_models(
     """Fetches available models from the configured OpenAI-compatible endpoint.
 
     `base_url` + `api_key` override the server defaults for this request only
-    (used by Admin tab to preview before saving). `kind=embedding` filters to
-    embedding models only and uses the embedding base/key.
+    (used by Admin tab to preview before saving). `kind` selects which base/key to use.
     """
     target = base_url.strip() if base_url and base_url.strip() else None
     if target and not (target.startswith("http://") or target.startswith("https://")):
@@ -289,11 +284,6 @@ async def get_models(
             {"id": m.id.removeprefix("models/"), "owned_by": getattr(m, "owned_by", "") or ""}
             for m in models.data
         ]
-        if is_emb:
-            # Filter to embedding models only; if none match, return all (provider may not tag them)
-            filtered = [x for x in model_list if _is_embedding_model_id(x["id"])]
-            if filtered:
-                model_list = filtered
         return {"models": model_list, "default": default_model, "base_url": target or default_base}
     except HTTPException:
         raise
@@ -793,9 +783,9 @@ _LANDING_HTML_TEMPLATE = """<!doctype html>
 <body>
   <div class="card">
     <h1>📦 Logistics Analytics API</h1>
-    <p>Backend running on Hugging Face. UI ada di Netlify — klik tombol di bawah untuk buka aplikasi.</p>
-    <a class="btn" href="{frontend_url}" target="_blank" rel="noopener noreferrer">Buka Aplikasi → logistics-ai.netlify.app</a>
-    <p class="links"><a href="/docs">API Docs</a> · <a href="/health">Health</a> · <a href="/health/db">DB Health</a> · <code>GET /</code> JSON jika Accept: application/json</p>
+    <p>Backend running on Hugging Face. UI is on Netlify — click below to open the app.</p>
+    <a class="btn" href="{frontend_url}" target="_blank" rel="noopener noreferrer">Open App → logistics-ai.netlify.app</a>
+    <p class="links"><a href="/docs">API Docs</a> · <a href="/health">Health</a> · <a href="/health/db">DB Health</a> · <code>GET /</code> returns JSON when Accept: application/json</p>
   </div>
 </body>
 </html>"""
@@ -803,13 +793,10 @@ _LANDING_HTML_TEMPLATE = """<!doctype html>
 def _landing_html() -> str:
     return _LANDING_HTML_TEMPLATE.format(frontend_url=_frontend_url())
 
-@app.get("/")
-async def root(request: Request):
-    """Landing HTML for browsers (Hugging Face), JSON for API clients."""
-    accept = request.headers.get("accept", "")
-    if "text/html" in accept:
-        return HTMLResponse(content=_landing_html())
-    return {"status": "ok", "service": "logistics-api", "docs": "/docs", "frontend": _frontend_url()}
+@app.get("/", response_class=HTMLResponse)
+async def root():
+    """Landing HTML for Hugging Face — always HTML so Space preview shows UI."""
+    return HTMLResponse(content=_landing_html())
 
 
 @app.get("/health")

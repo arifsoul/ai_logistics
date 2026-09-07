@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api, getRole, me, type Role } from "@/lib/api";
 
@@ -9,6 +9,81 @@ type UserRow = { id: number; username: string; role: Role; password?: string | n
 
 const MANAGEABLE_ROLES: Role[] = ["user", "admin"];
 const SUPERADMIN_USERNAME = "super@admin.com";
+
+function ModelCombobox({
+  value,
+  onChange,
+  options,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+  placeholder: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const filtered = useMemo(() => {
+    const q = value.trim().toLowerCase();
+    if (!q) return options.slice(0, 100);
+    return options.filter((o) => o.toLowerCase().includes(q)).slice(0, 100);
+  }, [value, options]);
+  useEffect(() => {
+    const h = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+  if (!options.length) {
+    return (
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400"
+      />
+    );
+  }
+  return (
+    <div ref={ref} className="relative">
+      <input
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        placeholder={placeholder}
+        autoComplete="off"
+        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400"
+      />
+      {open && (
+        <ul className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-auto rounded-lg border border-slate-700 bg-slate-900 shadow-xl">
+          {filtered.length ? (
+            filtered.map((m) => (
+              <li key={m}>
+                <button
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    onChange(m);
+                    setOpen(false);
+                  }}
+                  className={`w-full truncate px-3 py-2 text-left text-sm hover:bg-slate-800 ${m === value ? "bg-slate-800 text-cyan-300" : "text-slate-200"}`}
+                >
+                  {m}
+                </button>
+              </li>
+            ))
+          ) : (
+            <li className="px-3 py-2 text-sm text-slate-500">No match</li>
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 export default function AdminPage() {
   const router = useRouter();
@@ -87,26 +162,26 @@ export default function AdminPage() {
   };
 
   const testAiModel = async () => {
-    if (!aiModel.trim()) { setAiTest({ ok: false, msg: "Isi AI model dulu" }); return; }
+    if (!aiModel.trim()) { setAiTest({ ok: false, msg: "Enter AI model first" }); return; }
     setAiTesting(true); setAiTest(null);
     try {
       const p = new URLSearchParams({ model: aiModel.trim(), kind: "chat" });
       if (aiBaseUrl.trim()) p.set("base_url", aiBaseUrl.trim());
       if (aiApiKey.trim()) p.set("api_key", aiApiKey.trim());
       const r = await api<{ valid: boolean; error?: string }>(`/api/models/validate?${p.toString()}`);
-      setAiTest(r.valid ? { ok: true, msg: "Valid ✓" } : { ok: false, msg: r.error || "Model tidak ditemukan di endpoint" });
+      setAiTest(r.valid ? { ok: true, msg: "Valid ✓" } : { ok: false, msg: r.error || "Model not found at endpoint" });
     } catch (e) { setAiTest({ ok: false, msg: e instanceof Error ? e.message : "Test failed" }); }
     finally { setAiTesting(false); }
   };
   const testEmbModel = async () => {
-    if (!embModel.trim()) { setEmbTest({ ok: false, msg: "Isi embedding model dulu" }); return; }
+    if (!embModel.trim()) { setEmbTest({ ok: false, msg: "Enter embedding model first" }); return; }
     setEmbTesting(true); setEmbTest(null);
     try {
       const p = new URLSearchParams({ model: embModel.trim(), kind: "embedding" });
       if (embBaseUrl.trim()) p.set("base_url", embBaseUrl.trim());
       if (embApiKey.trim()) p.set("api_key", embApiKey.trim());
       const r = await api<{ valid: boolean; error?: string }>(`/api/models/validate?${p.toString()}`);
-      setEmbTest(r.valid ? { ok: true, msg: "Valid ✓" } : { ok: false, msg: r.error || "Model tidak ditemukan di endpoint" });
+      setEmbTest(r.valid ? { ok: true, msg: "Valid ✓" } : { ok: false, msg: r.error || "Model not found at endpoint" });
     } catch (e) { setEmbTest({ ok: false, msg: e instanceof Error ? e.message : "Test failed" }); }
     finally { setEmbTesting(false); }
   };
@@ -263,7 +338,7 @@ export default function AdminPage() {
 
       <section className="rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-4">
         <h2 className="text-lg font-semibold">AI & Embedding config</h2>
-        <p className="text-xs text-slate-400">Base URL AI dan Embedding dipisah + API key masing-masing (kosongkan untuk pakai env var — production/local fallback). Dropdown auto-fetch dari base URL + key. Klik Test untuk validasi model, Sync untuk simpan + re-seed vector DB.</p>
+        <p className="text-xs text-slate-400">AI and Embedding base URLs are separate, each with its own API key (leave empty to use env vars — production/local fallback). The dropdown auto-fetches from the base URL + key. Click Test to validate the model, Sync to save and re-seed the vector DB.</p>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-2">
             <label className="text-sm text-slate-400">AI Base URL</label>
@@ -273,19 +348,12 @@ export default function AdminPage() {
             </div>
             <label className="text-sm text-slate-400">AI API Key {hasAiKey && !aiApiKey ? <span className="text-emerald-400">(env/DB ✓)</span> : null}</label>
             <div className="flex gap-1">
-              <input type="password" value={aiApiKey} onChange={(e) => setAiApiKey(e.target.value)} placeholder={hasAiKey ? "•••••••• (kosongkan = pakai env/DB)" : "sk-..."} className="flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400" />
-              {hasAiKey && <button type="button" onClick={async () => { await api("/api/ai-config", { method: "PUT", body: JSON.stringify({ ai_api_key: "" }) }); setAiApiKey(""); await loadCfg(); setNotice("AI key cleared — fallback ke env var"); }} className="rounded-lg border border-slate-700 px-2 py-1 text-xs hover:border-rose-400">Clear</button>}
+              <input type="password" value={aiApiKey} onChange={(e) => setAiApiKey(e.target.value)} placeholder={hasAiKey ? "•••••••• (leave empty = use env/DB)" : "sk-..."} className="flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400" />
+              {hasAiKey && <button type="button" onClick={async () => { await api("/api/ai-config", { method: "PUT", body: JSON.stringify({ ai_api_key: "" }) }); setAiApiKey(""); await loadCfg(); setNotice("AI key cleared — falling back to env var"); }} className="rounded-lg border border-slate-700 px-2 py-1 text-xs hover:border-rose-400">Clear</button>}
             </div>
             {aiModelsError && <p className="text-xs text-rose-400">{aiModelsError}</p>}
-            <label className="text-sm text-slate-400">AI Model</label>
-            {aiModels.length ? (
-              <select value={aiModel} onChange={(e) => setAiModel(e.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
-                {aiModels.map((m) => <option key={m} value={m}>{m}</option>)}
-                {!aiModels.includes(aiModel) && aiModel && <option value={aiModel}>{aiModel} (current)</option>}
-              </select>
-            ) : (
-              <input value={aiModel} onChange={(e) => setAiModel(e.target.value)} placeholder="gemini-flash-latest" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400" />
-            )}
+            <label className="text-sm text-slate-400">AI Model {aiModels.length ? <span className="text-slate-500">({aiModels.length} — type to search)</span> : null}</label>
+            <ModelCombobox value={aiModel} onChange={setAiModel} options={aiModels} placeholder={aiModels.length ? "type to search models…" : "gemini-flash-latest"} />
             <div className="flex items-center gap-2">
               <button type="button" onClick={testAiModel} disabled={aiTesting} className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-semibold hover:border-cyan-400 disabled:opacity-50">{aiTesting ? "Testing…" : "Test model"}</button>
               {aiTest && <span className={`text-xs ${aiTest.ok ? "text-emerald-400" : "text-rose-400"}`}>{aiTest.msg}</span>}
@@ -299,19 +367,12 @@ export default function AdminPage() {
             </div>
             <label className="text-sm text-slate-400">Embedding API Key {hasEmbKey && !embApiKey ? <span className="text-emerald-400">(env/DB ✓)</span> : null}</label>
             <div className="flex gap-1">
-              <input type="password" value={embApiKey} onChange={(e) => setEmbApiKey(e.target.value)} placeholder={hasEmbKey ? "•••••••• (kosongkan = pakai env/DB)" : "sk-..."} className="flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400" />
-              {hasEmbKey && <button type="button" onClick={async () => { await api("/api/ai-config", { method: "PUT", body: JSON.stringify({ embedding_api_key: "" }) }); setEmbApiKey(""); await loadCfg(); setNotice("Embedding key cleared — fallback ke env var"); }} className="rounded-lg border border-slate-700 px-2 py-1 text-xs hover:border-rose-400">Clear</button>}
+              <input type="password" value={embApiKey} onChange={(e) => setEmbApiKey(e.target.value)} placeholder={hasEmbKey ? "•••••••• (leave empty = use env/DB)" : "sk-..."} className="flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400" />
+              {hasEmbKey && <button type="button" onClick={async () => { await api("/api/ai-config", { method: "PUT", body: JSON.stringify({ embedding_api_key: "" }) }); setEmbApiKey(""); await loadCfg(); setNotice("Embedding key cleared — falling back to env var"); }} className="rounded-lg border border-slate-700 px-2 py-1 text-xs hover:border-rose-400">Clear</button>}
             </div>
             {embModelsError && <p className="text-xs text-rose-400">{embModelsError}</p>}
-            <label className="text-sm text-slate-400">Embedding Model (filter: embedding only)</label>
-            {embModels.length ? (
-              <select value={embModel} onChange={(e) => setEmbModel(e.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm">
-                {embModels.map((m) => <option key={m} value={m}>{m}</option>)}
-                {!embModels.includes(embModel) && embModel && <option value={embModel}>{embModel} (current)</option>}
-              </select>
-            ) : (
-              <input value={embModel} onChange={(e) => setEmbModel(e.target.value)} placeholder="text-embedding-3-small" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-cyan-400" />
-            )}
+            <label className="text-sm text-slate-400">Embedding Model {embModels.length ? <span className="text-slate-500">({embModels.length} — type to search)</span> : null}</label>
+            <ModelCombobox value={embModel} onChange={setEmbModel} options={embModels} placeholder={embModels.length ? "type to search models…" : "text-embedding-3-small"} />
             <div className="flex items-center gap-2">
               <button type="button" onClick={testEmbModel} disabled={embTesting} className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-semibold hover:border-cyan-400 disabled:opacity-50">{embTesting ? "Testing…" : "Test model"}</button>
               {embTest && <span className={`text-xs ${embTest.ok ? "text-emerald-400" : "text-rose-400"}`}>{embTest.msg}</span>}

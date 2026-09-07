@@ -123,6 +123,8 @@ export default function ChatPage() {
           patch({ table: frame });
         } else if (frame.type === "chart") {
           patch({ chart: frame.chart });
+        } else if (frame.type === "meta") {
+          patch({ forecast: (frame as unknown as { forecast?: import("@/lib/frames").ForecastMeta }).forecast, interpretation: (frame as unknown as { interpretation?: import("@/lib/frames").InterpretationMeta }).interpretation });
         } else if (frame.type === "error") {
           patch({ error: frame.message });
         }
@@ -200,6 +202,29 @@ export default function ChatPage() {
                   <pre className="mt-2 overflow-auto rounded-lg bg-slate-950 p-3">
                     {turn.sql}
                   </pre>
+                </details>
+              )}
+              {(turn.interpretation || turn.forecast) && (
+                <details className="text-xs text-slate-400" open>
+                  <summary className="cursor-pointer">Explainability</summary>
+                  <div className="mt-2 space-y-1 rounded-lg bg-slate-950 p-3">
+                    {turn.interpretation && (
+                      <>
+                        {turn.interpretation.row_count !== undefined && <p>Rows returned: {turn.interpretation.row_count}</p>}
+                        {turn.interpretation.columns && <p>Columns: {turn.interpretation.columns.join(", ")}</p>}
+                        {turn.interpretation.sql && <p className="break-all">Query plan: {turn.interpretation.sql}</p>}
+                      </>
+                    )}
+                    {turn.forecast && (
+                      <>
+                        <p>Method: {turn.forecast.method} — 3-month moving average + 15% safety buffer</p>
+                        <p>Inventory recommendation: {turn.forecast.inventory_recommendation}</p>
+                        <p>{turn.forecast.explanation}</p>
+                        <p>Historical + forecast visualized as line chart; underlying data in table above.</p>
+                      </>
+                    )}
+                    {!turn.forecast && <p>Filters/metrics/dimensions encoded in SQL above; table shows underlying data.</p>}
+                  </div>
                 </details>
               )}
             </article>

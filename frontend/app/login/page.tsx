@@ -34,7 +34,7 @@ export default function LoginPage() {
           Logistics AI
         </p>
         <h1 className="mt-2 text-2xl font-bold tracking-tight">Sign in</h1>
-        <p className="mt-1 text-xs text-slate-500">Akun dibuat oleh admin. Hubungi admin jika belum punya akun.</p>
+        <p className="mt-1 text-xs text-slate-500">Accounts are created by an admin. Contact your admin if you don&apos;t have one yet.</p>
 
         <form onSubmit={submit} className="mt-6 space-y-4">
           <div>

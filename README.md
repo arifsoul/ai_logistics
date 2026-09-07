@@ -22,7 +22,7 @@ Postgres, and nothing else feeds the answers.
   columns and their allowed values before it writes SQL. There is no document
   upload and no Chroma.
 
-## Arsitektur
+## Architecture
 
 ```mermaid
 flowchart LR
@@ -59,7 +59,7 @@ flowchart LR
 **Frontend** (`frontend/`) — Next.js 16 App Router, client-side fetching, no SSR data.
 
 - `app/page.tsx` — redirect `/` → `/chat`.
-- `app/login/page.tsx` — login/register toggle, `POST /api/auth/token` (form-encoded) / `POST /api/auth/register`, `setSession(token, role)` in `localStorage`.
+- `app/login/page.tsx` — login form, `POST /api/auth/token` (form-encoded), `setSession(token, role)` in `localStorage` (registration via Admin only; public self-register disabled).
 - `app/(app)/layout.tsx` + `components/NavBar.tsx` — auth gate, `GET /api/users/me` validation, clear + redirect to `/login` on 401, role-based nav (Admin visible only for admin/superadmin).
 - `app/(app)/chat/page.tsx` — sample questions, model selector (`GET /api/models`), `session_id` in `localStorage` (`crypto.randomUUID()`), `POST /api/chat` NDJSON streaming via `readFrames`, renders narrative + `DataTable` + `ChartCanvas` + SQL drawer, `GET /api/history` replay on reload.
 - `app/(app)/dashboard/page.tsx` — `GET /api/analytics/kpis` + `POST /api/analytics/query` (orders/month, delivered/month, delayed/month, carrier, region), KPI cards + Chart.js.
@@ -73,8 +73,7 @@ flowchart LR
 
 ### Authentication
 
-1. The user signs in through `POST /api/auth/token` or registers through
-   `POST /api/auth/register`.
+1. The user signs in through `POST /api/auth/token` (form-encoded). New accounts are created by an admin via `POST /api/users` (or `POST /api/auth/register` when called with an admin token).
 2. The backend verifies the password and returns a JWT with the user's role.
 3. The frontend stores the token and sends it as
    `Authorization: Bearer <token>`.
@@ -153,6 +152,28 @@ sequenceDiagram
 | Deployment | Docker (`Dockerfile` → `uvicorn backend.main:app --port $PORT`), Hugging Face Spaces (Docker, `app_port: 7860`), Netlify (`frontend/netlify.toml` + `@netlify/plugin-nextjs`) | Hosting |
 | Testing | Python `unittest` (`tests/`, 25 tests, AI stub) | No API key needed |
 
+## AI Tools & Disclosure
+
+> **Transparency statement:** This project was built with assistance from **GitHub Copilot** for specific implementation tasks, but all core logic, data validation, and business decisions were reviewed and validated manually. Undisclosed AI usage was avoided intentionally — this section documents exactly what was AI-assisted and what was human-owned.
+
+**AI harness:** GitHub Copilot (VS Code) — used as the AI harness for architecture planning, coding, debugging, and documentation drafting.
+
+**AI-assisted:**
+- Boilerplate and scaffolding for FastAPI routes (`backend/main.py`), SQLAlchemy models, and Next.js App Router pages/components.
+- Implementation assistance for NDJSON streaming (`lib/frames.ts` / `POST /api/chat`), `ChartCanvas`/`DataTable` wiring, and admin `ModelCombobox`.
+- Debugging and refactoring support (SQL guardrails in `backend/sql_agent.py`, pgvector retrieval in `vectorstore.py`, auth/role checks).
+- Testing & validation assistance — 25 `unittest` tests with AI stubs (no network/key), SQL safety checks (`READ ONLY` transaction, `LIMIT 200`, `SQL_TIMEOUT_MS`, forbidden-keyword checks), and data correctness against `mock_logistics_data.csv` as single source of truth; generated with Copilot and reviewed/adjusted by author.
+- Drafting and polishing of documentation and comments.
+
+**Human-owned (author):**
+- **Technology stack selection** — FastAPI + SQLAlchemy + Postgres/pgvector (Supabase) + Next.js 16/React 19/Tailwind/Chart.js; OpenAI-compatible provider abstraction (`backend/ai_config.py`) so any provider (OpenAI, Groq, Google AI Studio, Ollama, etc.) can be swapped via env.
+- **Deployment** — Docker image for Hugging Face Spaces (`app_port: 7860`), Netlify frontend (`frontend/netlify.toml` + `@netlify/plugin-nextjs`), Supabase Postgres, CORS and env wiring, Imgur-hosted screenshots to avoid XET binary issues.
+- **Workflow design (dual-RAG):**
+  1. **Schema-as-RAG for SQL generation** — `schema_sql/orders.sql` + `schema_docs.py` (24 metadata docs) are embedded into pgvector (`schema_docs` table, 3072-dim). At query time the question is embedded and cosine-searched to retrieve DDL + column docs + allowed values + examples; that context grounds the LLM to produce a single validated `SELECT`/`WITH`.
+  2. **Result-as-RAG for narrative + chart** — the validated SQL is executed read-only against Postgres; the returned rows/columns become the second RAG context. A follow-up prompt constrained to *numbers only from the result* generates the descriptive narrative (streamed as `token` frames) and the chart spec (`chart` frame), so the answer is grounded in actual data, not hallucinated.
+
+All AI-generated code was reviewed, tested, and adjusted by the author before submission.
+
 ## Layout
 
 ```
@@ -178,7 +199,7 @@ backend/
   rag.py / runtime.py     retrieval helpers / runtime config
 frontend/                 Next.js 16 App Router
   app/page.tsx            root redirect -> /chat
-  app/login/page.tsx      login + register toggle
+  app/login/page.tsx      sign-in form (registration via Admin only)
   app/(app)/layout.tsx    auth gate (NavBar)
   app/(app)/chat/page.tsx question input, model select, NDJSON streaming, table/chart/SQL
   app/(app)/dashboard/page.tsx  KPI cards + charts (calls /api/analytics/*)
@@ -186,7 +207,7 @@ frontend/                 Next.js 16 App Router
   components/NavBar.tsx   nav + token validation via /api/users/me
   components/ChartCanvas.tsx  Chart.js wrapper (destroy on cleanup)
   components/DataTable.tsx    result table
-  lib/api.ts              API_URL, token/role in localStorage, apiFetch/api, login/register/me
+  lib/api.ts              API_URL, token/role in localStorage, apiFetch/api, login/me (register is admin-only)
   lib/frames.ts           NDJSON frame types + readFrames async generator
   netlify.toml            base frontend, @netlify/plugin-nextjs
 tests/                    25 unittest tests (AI stub, no network)
@@ -256,7 +277,7 @@ npm run dev
 ```
 
 Open <http://localhost:3000>. It redirects to `/chat`, which is the only place
-questions are asked. Register an account on first use.
+questions are asked. Sign in with an existing account (new accounts are created by an admin via `/admin`).
 
 | Route | Purpose |
 | --- | --- |
@@ -294,12 +315,21 @@ query result table, and the option to inspect generated SQL.*
 *Caption: Operations dashboard with total orders, delivered, delayed, on-time
 rate, and average delivery KPIs, plus volume and delivery-performance charts.*
 
+### Admin — User Management & AI / Embedding Config
+
+![Admin — User management & AI & Embedding config](https://i.imgur.com/3AMgK2Z.png)
+
+*Caption: Admin tab — user management (create user, change role, reset password, delete; superadmin `super@admin.com` is protected) and AI & Embedding config (separate base URLs + API keys with env fallback, searchable model dropdown, Test / Save / Sync with vector re-seed).*
+
+- **User management** — `GET /api/users` list, `POST /api/users` (form-encoded `username`/`password`/`role`), `PUT /api/users/{id}/role`, `POST /api/users/{id}/reset-password`, `DELETE /api/users/{id}`. Admin/superadmin only; superadmin shows badge, no role select / delete / reset; self-delete hidden.
+- **AI & Embedding config** — `GET /api/ai-config` + `PUT /api/ai-config` + `POST /api/ai-config/sync`. Separate `AI Base URL` / `Embedding Base URL` + `AI API Key` / `Embedding API Key` (empty = env fallback, Clear button), searchable `ModelCombobox` (`GET /api/models?kind=chat|embedding&base_url&api_key`), `Test model` (`GET /api/models/validate`), `Embedding Dim` auto-filled from `embedding_dims`, `Save` vs `Sync (save + re-seed vectors)`.
+
 ## How to Use
 
 The live frontend is available at <https://logistics-ai.netlify.app/>. The
 backend Space is <https://huggingface.co/spaces/arifsoul/chatbot_rag>.
 
-1. Open the frontend and sign in, or select **Register** to create an account.
+1. Open the frontend and sign in (new accounts are created by an admin via `/admin`; public self-registration is disabled).
 2. On `/chat`, choose a sample question or type a question about the logistics
   database, then select **Ask**.
 3. Read the generated narrative and inspect the returned chart and table. Open
@@ -318,6 +348,18 @@ Monthly order volume for 2025
 Average delivery days per region
 Forecast stock for PAPER-0197 for 4 months
 ```
+
+### Demo credentials
+
+Authentication required. Use one of:
+
+| Username | Password | Role | Notes |
+| --- | --- | --- | --- |
+| `super@admin.com` | set via `python -m backend.seed --superadmin-password "<password>"` | superadmin | Protected; cannot be deleted or demoted. Seed once on Supabase. |
+| any registered user | chosen at creation | user | Created by an admin via `/admin` → Add user. |
+| any user promoted to admin | — | admin | Promoted by superadmin/admin via `/admin` → Change role. |
+
+For reviewers without a seeded superadmin, have an existing admin create an account via `/admin` → Add user, or seed `super@admin.com` with `--superadmin-password` and sign in. All core features (chat, dashboard, history) work as `user`; promote via `/admin` to test admin features.
 
 ## Environment variables
 
@@ -428,3 +470,25 @@ The `Dockerfile` runs `uvicorn backend.main:app --host 0.0.0.0 --port $PORT` (`$
 - The API has no rate limiting. Put it behind a gateway if it is public.
 - Generated SQL is restricted to a single read-only `SELECT` on `orders`, but the
   database user should still be read-only in production.
+
+### Unsupported queries
+
+- Questions outside the `orders` table scope (e.g. external market data, non-logistics domains) return `That question cannot be answered from the orders data.`
+- Multi-table joins, free-form DDL/DML, or queries requiring data not in `orders` are rejected by guardrails.
+- Forecast requires a SKU like `PAPER-0197`; without it the system asks for a SKU. Horizon defaults to 4 months (1–12 allowed).
+- Ambiguous natural language (e.g. "show me something interesting") may produce a best-effort SQL or an error — the UI surfaces the error and the user can rephrase.
+
+### AI approach — how questions are interpreted and tools selected
+
+- **Interpretation:** Every question is embedded and cosine-searched against `schema_docs` (24 docs: DDL, column docs, allowed values, examples) to retrieve grounded context. That context + the live DDL is injected into the SQL prompt so the model only uses real columns/values.
+- **Tool selection (routing):** `backend/sql_agent.py` checks `FORECAST_RE` + `SKU_RE` first — if the question contains forecast/inventory keywords and a SKU, it routes to the deterministic `LogisticsAnalytics.forecast()` (moving average, no LLM SQL). Otherwise it routes to the Query Tool: LLM writes one `SELECT` → guardrails → `READ ONLY` execution → table/chart → narration. This matches the spec flow: User Question → AI Interpretation → Tool Selection → Structured Input → Computation → Result → Explanation → Visualization.
+- **Explainability:** Every answer streams `sql` (query plan), `table` (underlying data), `chart` (auto-selected line/bar), and `meta` (row count, columns, forecast method/recommendation) so the UI can render filters/metrics/dimensions and the data table.
+
+## Future improvements
+
+- Query result caching (e.g. Redis) for repeated dashboard/ask queries.
+- Rate limiting and request throttling at the API gateway.
+- Richer forecasting (exponential smoothing / linear regression) with confidence intervals.
+- Handling ambiguous queries via clarification prompts instead of best-effort SQL.
+- Column-level lineage and filter chips in the UI (show applied time range, carrier, SKU as badges).
+- Export to CSV/Excel from the result table.

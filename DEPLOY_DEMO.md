@@ -7,12 +7,12 @@ This repo is best deployed as:
 - Supabase: database
 
 > **Hugging Face Spaces — backend Docker:**
-> 1. Buat Space: https://huggingface.co/new-space → SDK `Docker` → Blank.
-> 2. Push repo ini ke Space remote (`git remote add space https://huggingface.co/spaces/<user>/<space>` lalu `git push space main`). HF build `Dockerfile` otomatis (port `7860`).
+> 1. Create Space: https://huggingface.co/new-space → SDK `Docker` → Blank.
+> 2. Push this repo to the Space remote (`git remote add space https://huggingface.co/spaces/<user>/<space>` then `git push space main`). HF builds `Dockerfile` automatically (port `7860`).
 > 3. In the Space **Settings → Variables and secrets**, set `DATABASE_URL` (Supabase pooler `postgresql+psycopg://...`), `API_KEY`, `AI_BASE_URL`, `AI_MODEL`, `EMBEDDING_MODEL`, `EMBEDDING_DIM`, `SECRET_KEY`, and `CORS_ORIGINS` (the Netlify URL plus `https://<user>-<space>.hf.space`).
 > 4. Seed once from a trusted machine: `DATABASE_URL=<supabase> python -m backend.seed --superadmin-password "<strong-password>"`.
-> 5. Set `NEXT_PUBLIC_API_URL=https://<user>-<space>.hf.space` di Netlify. Cek `GET /` dan `/docs` di Space URL.
-> Frontmatter `sdk: docker` + `app_port: 7860` sudah di `README.md`; `Dockerfile` jalankan `uvicorn backend.main:app --host 0.0.0.0 --port $PORT`.
+> 5. Set `NEXT_PUBLIC_API_URL=https://<user>-<space>.hf.space` in Netlify. Verify `GET /` and `/docs` on the Space URL.
+> Frontmatter `sdk: docker` + `app_port: 7860` is already in `README.md`; `Dockerfile` runs `uvicorn backend.main:app --host 0.0.0.0 --port $PORT`.
 
 ## 1) Deploy database
 

@@ -67,8 +67,10 @@ class TestAiConfig(unittest.TestCase):
         self.assertEqual(cfg.EMBEDDING_DIM, 3072)
 
     def test_client_requires_key(self):
-        with self.assertRaises(RuntimeError):
-            load().openai_client()
+        cfg = load()
+        with patch.object(cfg, "_db_settings", return_value=None):
+            with self.assertRaises(RuntimeError):
+                cfg.openai_client()
 
 if __name__ == "__main__":
     unittest.main()

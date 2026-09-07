@@ -283,13 +283,16 @@ async def answer(
                 frames = forecast
             else:
                 sql = generate_sql(question, session, model, base_url)
+                table = run_sql(sql, session)
                 frames = [
                     {"type": "sql", "sql": sql},
-                    {"type": "table", **run_sql(sql, session)},
+                    {"type": "table", **table},
                 ]
-                chart = build_chart(frames[1]["columns"], frames[1]["rows"])
+                chart = build_chart(table["columns"], table["rows"])
                 if chart:
                     frames.append({"type": "chart", "chart": chart})
+                # Explainability: query plan + row count + columns for UI
+                frames.append({"type": "meta", "interpretation": {"sql": sql, "row_count": len(table["rows"]), "columns": table["columns"]}})
         except (SqlAgentError, ValueError) as error:
             yield {"type": "error", "message": str(error)}
             return

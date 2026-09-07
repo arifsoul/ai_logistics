@@ -13,11 +13,26 @@ export type ChartSpec = {
   values: number[];
 };
 
+export type ForecastMeta = {
+  sku: string;
+  method: string;
+  historical: { period: string; value: number }[];
+  forecast: { period: string; value: number }[];
+  inventory_recommendation: number;
+  explanation: string;
+};
+
+export type InterpretationMeta = {
+  sql?: string;
+  row_count?: number;
+  columns?: string[];
+};
+
 export type Frame =
   | { type: "sql"; sql: string }
   | TableFrame
   | { type: "chart"; chart: ChartSpec }
-  | { type: "meta"; forecast?: unknown }
+  | { type: "meta"; forecast?: ForecastMeta; interpretation?: InterpretationMeta }
   | { type: "token"; text: string }
   | { type: "error"; message: string }
   | { type: "done" };
@@ -29,6 +44,8 @@ export type Turn = {
   sql?: string;
   table?: TableFrame;
   chart?: ChartSpec;
+  forecast?: ForecastMeta;
+  interpretation?: InterpretationMeta;
   error?: string;
 };
 
