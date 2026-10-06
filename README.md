@@ -7,7 +7,6 @@ sdk: docker
 pinned: false
 app_port: 7860
 ---
-
 # Logistics Analytics — text-to-SQL over Postgres
 
 Ask the logistics database in plain language. Every question is translated into
@@ -111,19 +110,19 @@ sequenceDiagram
 
   Query safety rules:
 
-  - only one `SELECT`/`WITH` statement is accepted;
-  - mutation/DDL keywords and risky functions are rejected;
-  - queries run inside a `READ ONLY` transaction;
-  - queries without `LIMIT` are capped at 200 rows;
-  - `SQL_TIMEOUT_MS` limits execution time;
-  - narration may only use numbers from the query result.
+- only one `SELECT`/`WITH` statement is accepted;
+- mutation/DDL keywords and risky functions are rejected;
+- queries run inside a `READ ONLY` transaction;
+- queries without `LIMIT` are capped at 200 rows;
+- `SQL_TIMEOUT_MS` limits execution time;
+- narration may only use numbers from the query result.
 
   Forecast questions such as `forecast stock for PAPER-0197 for 4 months` use a
   deterministic path: the system calculates a three-month moving average, creates
   the projection, and applies a 15% safety buffer. This path does not ask the
   model to generate forecast SQL.
 
-  ### Analytics and History
+### Analytics and History
 
   The dashboard calls `/api/analytics/kpis` and `/api/analytics/query` on load.
   All KPIs and charts are calculated directly by `LogisticsAnalytics` from
@@ -136,21 +135,21 @@ sequenceDiagram
 
 ## Technology Stack
 
-| Area | Technology | Role |
-| --- | --- | --- |
-| Backend API | Python 3.11+, FastAPI, Uvicorn | REST API + NDJSON streaming (`backend/main.py`) |
-| Database access | SQLAlchemy 2.x, psycopg 3 (`psycopg[binary]`) | Engine, sessions, ORM |
-| Database | PostgreSQL 15+ / Supabase + `vector` extension | `orders`, `users`, `chat_sessions`, `chat_messages`, `schema_docs` |
-| Vector search | pgvector (`vectorstore.py`, `schema_docs.py`) | Cosine search schema metadata only (24 docs) |
-| AI integration | Any OpenAI-compatible API (`backend/ai_config.py`) — OpenAI, Groq, OpenRouter, Ollama, vLLM, LM Studio, Google AI Studio, … | SQL generation, embeddings, narration. Defaults to `gemini-flash-latest` / `gemini-embedding-001` (dim 3072) |
-| SQL safety | `backend/sql_agent.py` guardrails + `READ ONLY` transaction + `SQL_TIMEOUT_MS` | Single SELECT/WITH, LIMIT 200, forbidden keywords |
-| Authentication | python-jose, Argon2 (`argon2-cffi`), bcrypt, passlib | JWT (`SECRET_KEY`), hashed passwords, role checks (`backend/auth.py`, `backend/roles.py`) |
-| Analytics | `backend/analytics.py` pure SQL | KPI, query, forecast (3-month MA + 15% buffer) |
-| Frontend framework | Next.js 16.3.4, React 19.2.8, TypeScript 5 | App Router, client fetching (`frontend/lib/api.ts`, `frontend/lib/frames.ts`) |
-| Styling | Tailwind CSS 4 (`@import "tailwindcss"` in `app/globals.css`) | Layout, no `tailwind.config.*` |
-| Visualization | Chart.js 4.5.0 (`components/ChartCanvas.tsx`) | Line/bar, destroy on cleanup |
-| Deployment | Docker (`Dockerfile` → `uvicorn backend.main:app --port $PORT`), Hugging Face Spaces (Docker, `app_port: 7860`), Netlify (`frontend/netlify.toml` + `@netlify/plugin-nextjs`) | Hosting |
-| Testing | Python `unittest` (`tests/`, 25 tests, AI stub) | No API key needed |
+| Area               | Technology                                                                                                                                                                               | Role                                                                                                            |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Backend API        | Python 3.11+, FastAPI, Uvicorn                                                                                                                                                           | REST API + NDJSON streaming (`backend/main.py`)                                                               |
+| Database access    | SQLAlchemy 2.x, psycopg 3 (`psycopg[binary]`)                                                                                                                                          | Engine, sessions, ORM                                                                                           |
+| Database           | PostgreSQL 15+ / Supabase +`vector` extension                                                                                                                                          | `orders`, `users`, `chat_sessions`, `chat_messages`, `schema_docs`                                    |
+| Vector search      | pgvector (`vectorstore.py`, `schema_docs.py`)                                                                                                                                        | Cosine search schema metadata only (24 docs)                                                                    |
+| AI integration     | Any OpenAI-compatible API (`backend/ai_config.py`) — OpenAI, Groq, OpenRouter, Ollama, vLLM, LM Studio, Google AI Studio, …                                                          | SQL generation, embeddings, narration. Defaults to`gemini-flash-latest` / `gemini-embedding-001` (dim 3072) |
+| SQL safety         | `backend/sql_agent.py` guardrails + `READ ONLY` transaction + `SQL_TIMEOUT_MS`                                                                                                     | Single SELECT/WITH, LIMIT 200, forbidden keywords                                                               |
+| Authentication     | python-jose, Argon2 (`argon2-cffi`), bcrypt, passlib                                                                                                                                   | JWT (`SECRET_KEY`), hashed passwords, role checks (`backend/auth.py`, `backend/roles.py`)                 |
+| Analytics          | `backend/analytics.py` pure SQL                                                                                                                                                        | KPI, query, forecast (3-month MA + 15% buffer)                                                                  |
+| Frontend framework | Next.js 16.3.4, React 19.2.8, TypeScript 5                                                                                                                                               | App Router, client fetching (`frontend/lib/api.ts`, `frontend/lib/frames.ts`)                               |
+| Styling            | Tailwind CSS 4 (`@import "tailwindcss"` in `app/globals.css`)                                                                                                                        | Layout, no`tailwind.config.*`                                                                                 |
+| Visualization      | Chart.js 4.5.0 (`components/ChartCanvas.tsx`)                                                                                                                                          | Line/bar, destroy on cleanup                                                                                    |
+| Deployment         | Docker (`Dockerfile` → `uvicorn backend.main:app --port $PORT`), Hugging Face Spaces (Docker, `app_port: 7860`), Netlify (`frontend/netlify.toml` + `@netlify/plugin-nextjs`) | Hosting                                                                                                         |
+| Testing            | Python`unittest` (`tests/`, 25 tests, AI stub)                                                                                                                                       | No API key needed                                                                                               |
 
 ## AI Tools & Disclosure
 
@@ -159,6 +158,7 @@ sequenceDiagram
 **AI harness:** GitHub Copilot (VS Code) — used as the AI harness for architecture planning, coding, debugging, and documentation drafting.
 
 **AI-assisted:**
+
 - Boilerplate and scaffolding for FastAPI routes (`backend/main.py`), SQLAlchemy models, and Next.js App Router pages/components.
 - Implementation assistance for NDJSON streaming (`lib/frames.ts` / `POST /api/chat`), `ChartCanvas`/`DataTable` wiring, and admin `ModelCombobox`.
 - Debugging and refactoring support (SQL guardrails in `backend/sql_agent.py`, pgvector retrieval in `vectorstore.py`, auth/role checks).
@@ -166,6 +166,7 @@ sequenceDiagram
 - Drafting and polishing of documentation and comments.
 
 **Human-owned (author):**
+
 - **Technology stack selection** — FastAPI + SQLAlchemy + Postgres/pgvector (Supabase) + Next.js 16/React 19/Tailwind/Chart.js; OpenAI-compatible provider abstraction (`backend/ai_config.py`) so any provider (OpenAI, Groq, Google AI Studio, Ollama, etc.) can be swapped via env.
 - **Deployment** — Docker image for Hugging Face Spaces (`app_port: 7860`), Netlify frontend (`frontend/netlify.toml` + `@netlify/plugin-nextjs`), Supabase Postgres, CORS and env wiring, Imgur-hosted screenshots to avoid XET binary issues.
 - **Workflow design (dual-RAG):**
@@ -251,7 +252,7 @@ schema_docs: 24 documents embedded
 
 Re-running it is safe — `orders` is truncated and reloaded, `schema_docs` is
 replaced. Add `--no-vectors` to load the orders without spending embedding
-calls. The API then listens on <http://127.0.0.1:8000> (`/docs` for the OpenAPI
+calls. The API then listens on [http://127.0.0.1:8000](http://127.0.0.1:8000) (`/docs` for the OpenAPI
 page).
 
 Seed or reset the protected superadmin password directly in PostgreSQL:
@@ -276,14 +277,14 @@ Copy-Item .env.example .env.local
 npm run dev
 ```
 
-Open <http://localhost:3000>. It redirects to `/chat`, which is the only place
+Open [http://localhost:3000](http://localhost:3000). It redirects to `/chat`, which is the only place
 questions are asked. Sign in with an existing account (new accounts are created by an admin via `/admin`).
 
-| Route | Purpose |
-| --- | --- |
-| `/chat` | Ask anything. Streams narrative + table + chart, keeps history. |
-| `/dashboard` | Fixed KPI cards and charts only — no input fields. |
-| `/admin` | User list, create user, change role. Admins only. |
+| Route          | Purpose                                                         |
+| -------------- | --------------------------------------------------------------- |
+| `/chat`      | Ask anything. Streams narrative + table + chart, keeps history. |
+| `/dashboard` | Fixed KPI cards and charts only — no input fields.             |
+| `/admin`     | User list, create user, change role. Admins only.               |
 
 ## Application Screenshots
 
@@ -332,19 +333,19 @@ rate, and average delivery KPIs, plus volume and delivery-performance charts.*
 
 ## How to Use
 
-The live frontend is available at <https://logistics-ai.netlify.app/>. The
-backend Space is <https://huggingface.co/spaces/arifsoul/chatbot_rag>.
+The live frontend is available at [https://logistics-ai.netlify.app/](https://logistics-ai.netlify.app/). The
+backend Space is [https://huggingface.co/spaces/arifsoul/chatbot_rag](https://huggingface.co/spaces/arifsoul/chatbot_rag).
 
 1. Open the frontend and sign in (new accounts are created by an admin via `/admin`; public self-registration is disabled).
 2. On `/chat`, choose a sample question or type a question about the logistics
-  database, then select **Ask**.
+   database, then select **Ask**.
 3. Read the generated narrative and inspect the returned chart and table. Open
-  **Show SQL** when you need to review the generated read-only query.
+   **Show SQL** when you need to review the generated read-only query.
 4. Use **New chat** to start a new session. The current session history is
-  restored after a page reload for the same browser account.
+   restored after a page reload for the same browser account.
 5. Open **Analytics** for fixed KPI and operational charts.
 6. Users with the `admin` or `superadmin` role can open **Admin** to manage
-  users, roles, and password resets.
+   users, roles, and password resets.
 
 Example questions:
 
@@ -359,11 +360,11 @@ Forecast stock for PAPER-0197 for 4 months
 
 Authentication required. Use one of:
 
-| Username | Password | Role | Notes |
-| --- | --- | --- | --- |
-| `super@admin.com` | set via `python -m backend.seed --superadmin-password "<password>"` | superadmin | Protected; cannot be deleted or demoted. Seed once on Supabase. |
-| any registered user | chosen at creation | user | Created by an admin via `/admin` → Add user. |
-| any user promoted to admin | — | admin | Promoted by superadmin/admin via `/admin` → Change role. |
+| Username                   | Password                                                             | Role       | Notes                                                           |
+| -------------------------- | -------------------------------------------------------------------- | ---------- | --------------------------------------------------------------- |
+| `super@admin.com`        | set via`python -m backend.seed --superadmin-password "<password>"` | superadmin | Protected; cannot be deleted or demoted. Seed once on Supabase. |
+| any registered user        | chosen at creation                                                   | user       | Created by an admin via`/admin` → Add user.                  |
+| any user promoted to admin | —                                                                   | admin      | Promoted by superadmin/admin via`/admin` → Change role.      |
 
 For reviewers without a seeded superadmin, have an existing admin create an account via `/admin` → Add user, or seed `super@admin.com` with `--superadmin-password` and sign in. All core features (chat, dashboard, history) work as `user`; promote via `/admin` to test admin features.
 
@@ -371,23 +372,23 @@ For reviewers without a seeded superadmin, have an existing admin create an acco
 
 Backend (`.env`, read by `backend/ai_config.py` and `backend/database.py`):
 
-| Variable | Notes |
-| --- | --- |
-| `API_KEY` | API key for the chosen provider (`API_KEY` preferred, `GROQ_API_KEY` fallback for legacy `.env`). |
-| `AI_BASE_URL` | OpenAI-compatible base URL ending in `/v1` (or `/v1beta/openai/` for Google). Defaults to Google AI Studio. |
-| `AI_MODEL` | Chat model ID for that provider (e.g. `gemini-flash-latest`, `gpt-4o-mini`, `llama-3.1-70b-versatile`). Chat UI can override per request via `GET /api/models`. |
-| `EMBEDDING_MODEL` | Embedding model ID for that provider (e.g. `gemini-embedding-001`, `text-embedding-3-small`, `nomic-embed-text`). |
-| `EMBEDDING_DIM` | Vector width of `EMBEDDING_MODEL` (e.g. `3072` for `gemini-embedding-001`, `1536` for `text-embedding-3-small`). Changing it requires `python -m backend.seed` to re-embed `schema_docs`. |
-| `DATABASE_URL` | `postgresql+psycopg://...` — the driver must be psycopg 3. |
-| `SQL_TIMEOUT_MS` | Hard ceiling on any generated query. Default `5000`. |
-| `CORS_ORIGINS` | Comma-separated browser origins allowed to call the API. |
-| `SECRET_KEY` | JWT signing secret. Set a long random value in production. |
+| Variable            | Notes                                                                                                                                                                                                  |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `API_KEY`         | API key for the chosen provider (`API_KEY` preferred, `GROQ_API_KEY` fallback for legacy `.env`).                                                                                                |
+| `AI_BASE_URL`     | OpenAI-compatible base URL ending in`/v1` (or `/v1beta/openai/` for Google). Defaults to Google AI Studio.                                                                                         |
+| `AI_MODEL`        | Chat model ID for that provider (e.g.`gemini-flash-latest`, `gpt-4o-mini`, `llama-3.1-70b-versatile`). Chat UI can override per request via `GET /api/models`.                                 |
+| `EMBEDDING_MODEL` | Embedding model ID for that provider (e.g.`gemini-embedding-001`, `text-embedding-3-small`, `nomic-embed-text`).                                                                                 |
+| `EMBEDDING_DIM`   | Vector width of`EMBEDDING_MODEL` (e.g. `3072` for `gemini-embedding-001`, `1536` for `text-embedding-3-small`). Changing it requires `python -m backend.seed` to re-embed `schema_docs`. |
+| `DATABASE_URL`    | `postgresql+psycopg://...` — the driver must be psycopg 3.                                                                                                                                          |
+| `SQL_TIMEOUT_MS`  | Hard ceiling on any generated query. Default`5000`.                                                                                                                                                  |
+| `CORS_ORIGINS`    | Comma-separated browser origins allowed to call the API.                                                                                                                                               |
+| `SECRET_KEY`      | JWT signing secret. Set a long random value in production.                                                                                                                                             |
 
 Frontend (`frontend/.env.local`):
 
-| Variable | Notes |
-| --- | --- |
-| `NEXT_PUBLIC_API_URL` | Origin of the API. Defaults to `http://127.0.0.1:8000`. |
+| Variable                | Notes                                                    |
+| ----------------------- | -------------------------------------------------------- |
+| `NEXT_PUBLIC_API_URL` | Origin of the API. Defaults to`http://127.0.0.1:8000`. |
 
 ## How a question is answered
 
@@ -420,6 +421,7 @@ python -W ignore::ResourceWarning -m unittest discover -s tests
 1. Create a new Space at https://huggingface.co/new-space with SDK `Docker` and the `Blank` template.
 2. Push this repository to the Space (`git push` to `https://huggingface.co/spaces/<user>/<space>`). Hugging Face builds the `Dockerfile` automatically and exposes port `7860`.
 3. In the Space **Settings → Variables and secrets**, set (any OpenAI-compatible provider works):
+
    ```
    DATABASE_URL=postgresql+psycopg://... (Supabase pooler)
    API_KEY=<provider_api_key>              # OpenAI / Groq / OpenRouter / Google AI Studio / ...
@@ -430,6 +432,7 @@ python -W ignore::ResourceWarning -m unittest discover -s tests
    SECRET_KEY=<random_long>
    CORS_ORIGINS=https://<your-netlify>.netlify.app,https://<user>-<space>.hf.space
    ```
+
    Examples — pick one provider (keep `EMBEDDING_DIM` matched to `EMBEDDING_MODEL`):
    ```
    # Google AI Studio (default)
@@ -456,16 +459,54 @@ python -W ignore::ResourceWarning -m unittest discover -s tests
    EMBEDDING_MODEL=nomic-embed-text
    EMBEDDING_DIM=768
    ```
+
    After changing `EMBEDDING_MODEL`/`EMBEDDING_DIM`, re-seed: `python -m backend.seed`.
-  The only protected superadmin username is `super@admin.com`; every other
-  account may only use the `admin` or `user` role.
+   The only protected superadmin username is `super@admin.com`; every other
+   account may only use the `admin` or `user` role.
 4. Seed Supabase once, including the superadmin password:
-  `DATABASE_URL=<supabase> python -m backend.seed --superadmin-password "<strong-password>"`.
+   `DATABASE_URL=<supabase> python -m backend.seed --superadmin-password "<strong-password>"`.
 5. Use the Space URL as `NEXT_PUBLIC_API_URL` for the frontend. Health checks are `GET /` and `/docs`.
 
 The `Dockerfile` runs `uvicorn backend.main:app --host 0.0.0.0 --port $PORT` (`$PORT=7860` on Hugging Face). The `sdk: docker` and `app_port: 7860` frontmatter is already present in `README.md`.
 
 **Frontend** — Netlify picks up `frontend/netlify.toml` (base `frontend`, `@netlify/plugin-nextjs`). Set `NEXT_PUBLIC_API_URL` in Netlify to the HF Space URL.
+
+### Keeping the Supabase Free Tier project awake
+
+Supabase pauses Free Tier projects after **7 days without database activity**. A
+request that only fetches a static page does not count — the request has to
+reach Postgres. Since this app needs the database to demo, a paused project
+means the whole deployment looks broken.
+
+The repository ships a scheduled heartbeat that reads one row from `orders`
+twice a week, which is a wide margin inside the 7-day window.
+
+1. In the GitHub repo, go to **Settings → Secrets and variables → Actions** and
+   add two repository secrets (values are in `frontend/.env.local`):
+
+   | Secret | Value |
+   | --- | --- |
+   | `SUPABASE_URL` | `https://<project-ref>.supabase.co` |
+   | `SUPABASE_ANON_KEY` | the `anon` public key |
+
+2. The workflow [keep_alive.yml](.github/workflows/keep_alive.yml) runs
+   automatically at 00:00 UTC on Sunday and Thursday. Trigger it manually from
+   the **Actions** tab (`Run workflow`) to verify the setup right away.
+
+3. To test the same request locally:
+
+   ```powershell
+   python -m backend.keep_alive
+   ```
+
+   Both the workflow and the script print the returned row and exit non-zero on
+   failure, so a broken heartbeat surfaces instead of failing silently.
+
+The `anon` key is safe to use here: the request is read-only
+(`select=order_id&limit=1`). If `orders` ever gets Row Level Security enabled
+without an `anon` SELECT policy, the ping starts returning `401/403` — apply
+[schema_sql/supabase_keep_alive_policy.sql](schema_sql/supabase_keep_alive_policy.sql)
+to restore read access.
 
 ## Assumptions and limitations
 

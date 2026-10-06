@@ -1,5 +1,4 @@
 .venv
-.env
 .netlify
 .history
 .playwright-mcp
@@ -9,3 +8,11 @@
 *.csv
 !mock_logistics_data.csv
 __pycache__
+
+# Secrets: ignore every env file at any depth (root, backend/, frontend/).
+# Templates with fake values stay tracked so setup is still documented.
+.env
+.env.*
+**/.env
+**/.env.*
+!**/.env.example
